@@ -1,4 +1,229 @@
 import re, os
+try:
+    from lxml import etree
+except ImportError:
+    print 'lxml is required to parse X!tandem xml files due to the namespaces employed'
+    
+    
+mod_weights = {'h': 1.007825,
+               'h2o': 18.010565,
+               'h2o': 18.0106,
+               'nh3': 17.026549,
+               'methylation': 14.015650,
+               'oxidation': 15.994915,
+               'acetylation': 42.010565,
+               'acetylation': 42.0106,
+               'carbamidation': 57.021464,
+               'carboxylation': 58.005479,
+               'phosphorylation': 79.966330,
+               'amidation': 0.984016,
+               'formylation': 27.994915,
+               'cho': 29.002739665,
+               'nh2': 16.01872407,
+               'co': 27.99491463,
+               'oh': 17.00274
+               }
+
+class scanObject(object):
+    """
+    A scan object to store peaklist information in
+    """
+    def __init__(self):
+        self.scans = []
+        pass
+    
+    def addTitle(self, title):
+        self.title = title
+        
+    def addCharge(self, charge):
+        self.charge = charge
+        
+    def addMass(self, mass):
+        self.mass = mass
+        
+    def addScan(self, scan):
+        s = scan.split(' ')
+        if len(s) > 1 and float(s[1]) != 0.0:
+            self.scans.append(scan)
+        
+    def getInfo(self):
+        return self.scans
+    
+    def getCharge(self):
+        return self.charge
+    
+    def addRT(self, rt):
+        self.rt = rt
+    
+    def getTitle(self):
+        return self.title
+    
+    def getRT(self):
+        try:
+            return self.rt
+        except:
+            return None
+        
+    def getMZ(self):
+        out = []
+        for i in self.scans:
+            out.append(i.split(' '))
+        return out
+    
+    def getPrecursor(self):
+        return self.mass
+    
+    def writeScan(self, o):
+        o.write('BEGIN IONS\n')
+        o.write('TITLE=%s\n'%self.title)
+        try:
+            o.write('RTINSECONDS=%s\n'%self.rt)
+        except:
+            pass
+        o.write('PEPMASS=%s\n'%self.mass)
+        o.write('CHARGE=%s\n'%self.charge)
+        for i in self.scans:
+            o.write('%s\n'%i)
+        o.write('END IONS\n\n')
+        
+class peptideObject(scanObject):
+    """
+    An enhanced scan object that can store peptide information as well
+    """
+    def __init__(self):
+        scanObject.__init__(self)
+        self.mods = set([])
+        self.peptide = ""
+        
+    def setPeptide(self, peptide):
+        self.peptide = peptide
+        
+    def addModification(self, aa,position, modMass):
+        #store them like mascot
+        #clean up xtandem
+        try:
+            float(modMass)
+            if modMass[0] == '-':
+                modMass=modMass[1:]
+            modType = ""
+            for i in mod_weights:
+                if modMass in str(mod_weights[i]):
+                    #found it
+                    modType = i
+            if not modType:
+                print 'mod not found',modMass
+        except ValueError:
+            #string passed, nice
+            modType = modMass
+        self.mods.add('%s%s(%s)'%(aa,position,modType))
+        
+    def setExpect(self, expect):
+        self.expect = expect
+    
+    def setId(self, id):
+        self.id = id
+        
+    def setAccession(self, acc):
+        self.acc = acc
+        
+    def getId(self):
+        return self.id
+    
+    def getAccession(self):
+        return self.acc
+    
+    def getModifications(self):
+        return '|'.join(self.mods)
+    
+    def getPeptide(self):
+        return self.peptide
+    
+
+class spectraXML(object):
+    """
+    Basic parser -- need to make it an iterator at one point
+    """
+    def __init__(self, filename, **kwrds):
+        #parse in our X!Tandem xml file
+        self.xSpec = {}
+        if kwrds and kwrds['exclude']:
+            exclude = set(kwrds['exclude'])
+        else:
+            exclude = set()
+        try:
+            dom1 = etree.parse(filename)
+        except NameError:
+            print 'XTandem parsing unavailable: lxml is required to parse X!tandem xml files due to the namespaces employed'
+            return 
+        db = None
+#        for i in dom1.iter('{http://www.bioml.com/gaml/}values'):
+#            print i
+            #print 'hahaha'
+        for group in dom1.findall("group"):
+            subnote = list(group.iter("note"))
+            for i in subnote:
+                if (i.attrib["label"] == "Description"):
+                    experiment = i.text.strip()
+            try:
+                expect = group.attrib["expect"]
+            except KeyError:
+                continue
+            charge = group.attrib["z"]
+            premass = group.attrib["mh"]
+            rt = group.attrib["rt"]
+            proteins = list(group.iter("protein"))
+            fullProtein = ""
+            for protein in proteins:
+                scanObj = peptideObject()
+                scanObj.addCharge(charge)
+                scanObj.addMass(premass*int(charge))
+                scanObj.addRT(rt)
+                sgroup = group.iter("group")
+                for i in sgroup:
+                    #This is horridly inefficient...
+                    if "fragment ion mass spectrum" in i.attrib["label"]:
+                        ab = i.iter('{http://www.bioml.com/gaml/}Xdata')
+                        for j in ab:
+                            mzIter = j.iter('{http://www.bioml.com/gaml/}values')
+                            for k in mzIter:
+#                                print k.text
+                                mz = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
+                        ab = i.iter('{http://www.bioml.com/gaml/}Ydata')
+                        for j in ab:
+                            mzIter = j.iter('{http://www.bioml.com/gaml/}values')
+                            for k in mzIter:
+#                                print k.text
+                                inten = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
+                        for j,k in zip(mz,inten):
+                            scanObj.addScan('%s %s'%(j,k))
+                domain = list(protein.iter("domain"))[0]#we only have one domain per protein instance
+                note = list(protein.iter("note"))[0]#same here
+                mods = list(protein.iter("aa"))#we can have multiple modifications
+                if not db:
+                    files = list(protein.iter("file"))
+                    db = files[0].attrib["URL"]
+                id = domain.attrib["id"]
+                start = domain.attrib["start"]
+                end = domain.attrib["end"]
+                peptide = domain.attrib["seq"]
+                pExpect = domain.attrib["expect"]
+                for mod in mods:
+                    scanObj.addModification(mod.attrib["type"],mod.attrib["at"],mod.attrib["modified"])
+                scanObj.setPeptide(peptide)
+                scanObj.setExpect(pExpect)
+                scanObj.setId(id)
+                scanObj.addTitle(id)
+                scanObj.setAccession(note.text)
+                self.xSpec[id] = scanObj
+                
+    def getScan(self, id):
+        return self.xSpec[id]
+    
+    def getScans(self):
+        return self.xSpec.values()
+        
+
+#spectraXML("/home/chris/cluster/common/src/parallel_tandem_10-12-01-1/bin/NaiveCD4/_3FNaive_contSpec1/D3.2012_06_07_12_31_01.t.xml")
 
 class GFFObject(object):
     def __init__(self, infoList, filters, filterOnly,keydelim,exclude):
@@ -293,67 +518,6 @@ class GFFParser():
                         out[i] = res     
         return out
 
-class scanObject(object):
-    """
-    A scan object to store peaklist information in
-    """
-    def __init__(self):
-        self.scans = []
-        pass
-    
-    def addTitle(self, title):
-        self.title = title
-        
-    def addCharge(self, charge):
-        self.charge = charge
-        
-    def addMass(self, mass):
-        self.mass = mass
-        
-    def addScan(self, scan):
-        s = scan.split(' ')
-        if len(s) > 1 and float(s[1]) != 0.0:
-            self.scans.append(scan)
-        
-    def getInfo(self):
-        return self.scans
-    
-    def getCharge(self):
-        return self.charge
-    
-    def addRT(self, rt):
-        self.rt = rt
-    
-    def getTitle(self):
-        return self.title
-    
-    def getRT(self):
-        try:
-            return self.rt
-        except:
-            return None
-        
-    def getMZ(self):
-        out = []
-        for i in self.scans:
-            out.append(i.split(' '))
-        return out
-    
-    def getPrecursor(self):
-        return self.mass
-    
-    def writeScan(self, o):
-        o.write('BEGIN IONS\n')
-        o.write('TITLE=%s\n'%self.title)
-        try:
-            o.write('RTINSECONDS=%s\n'%self.rt)
-        except:
-            pass
-        o.write('PEPMASS=%s\n'%self.mass)
-        o.write('CHARGE=%s\n'%self.charge)
-        for i in self.scans:
-            o.write('%s\n'%i)
-        o.write('END IONS\n\n')
 
 class mgfIterator(object):
     def __init__(self, filename, **kwrds):

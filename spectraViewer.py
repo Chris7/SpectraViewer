@@ -41,7 +41,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
                     index = self.dataSet[tup]
                     for i in xrange(0,len(inputData)):
                         val = self._table.GetValue(index,i)
-                        if val != inputData[i] and val.find(inputData[i]) == -1:
+                        if val and val != inputData[i] and inputData[i] not in val:
                             self._table.SetValue(index,i,val+','+inputData[i])
                     #del self.dataSet[tup]
                     #MegaGrid.MegaGrid.SetRowValue(self,index,val)
@@ -72,12 +72,12 @@ class ViewerGrid(MegaGrid.MegaGrid):
             return
         
         #def onViewSequence(event, self=self, row=row):
-        if self.gridType == 'mgf':
+        if self.gridType == 'spectra':
             title = self._table.GetValue(row, 0)
             #path = self._table.GetHiddenValue(row, 0)
             self.parent.parent.loadScan(title)
             return
-        elif self.gridType == 'gff':
+        elif self.gridType == 'pepspectra':
             title = self._table.GetValue(row, 0)
             titles = title.split(',')
 #            if len(titles) > 1:
@@ -313,6 +313,7 @@ class MainFrame(wx.Frame):
         #plugins = {"Gene Id":MegaGrid.MegaFontRendererFactory("red", "ARIAL", 8),}
         self.mgfFiles = {}
         self.gffFiles = {}
+        self.pepFiles = {}
         dt3 = FileDropTarget(self.nb, self)
        # Link the Drop Target Object to the Text Control
         self.nb.SetDropTarget(dt3)
@@ -513,32 +514,43 @@ class ViewerPanel(wx.Panel):
         self.gridPanel = wx.Panel(self, -1)
         self.gridPanel.parent = self
         self.path = path
-        if path.find('.gff') != -1:
-            self.fileType = 'gff'
+        pepSpecType = ('gff', 'xml')
+        specType = ('mgf',)
+        if [i for i in pepSpecType if i in path]:
+            self.fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
             colnames = ["Scan Title", "Peptide", "Modifications", "Charge", "Accession"]
             data = []
             plugins = {}
             self.dataGrid = ViewerGrid(self.gridPanel, data, colnames, plugins)
-            self.dataGrid.setType('gff')
-            gffIterator = fileIterators.GFFIterator(path, random=['SpectraId1', 'SpectraId2'])
-            self.parent.gffFiles[path] = gffIterator
-#            rnum=0
-            for i in gffIterator:
-                if not i:
-                    continue
-#                rnum+=1
-                sid = i.getAttribute('SpectraId1')
-                if sid:
-                    self.dataGrid.AppendRow([sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')], group=[4])
-#                if rnum>50:
-#                    break
-        elif path.find('.mgf') != -1:
-            self.fileType = 'mgf'
+            self.dataGrid.setType('pepspectra')
+            self.dataType = 'pepspectra'
+            if self.fileType == 'gff':
+                gffIterator = fileIterators.GFFIterator(path, random=['SpectraId1', 'SpectraId2'])
+                self.parent.gffFiles[path] = gffIterator
+    #            rnum=0
+                for i in gffIterator:
+                    if not i:
+                        continue
+    #                rnum+=1
+                    sid = i.getAttribute('SpectraId1')
+                    if sid:
+                        self.dataGrid.AppendRow([sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')], group=[4])
+    #                if rnum>50:
+    #                    break
+            elif self.fileType == 'xml':
+                pepParser = fileIterators.spectraXML(path)
+                self.parent.pepFiles[path] = pepParser
+                for i in pepParser.getScans():
+                    self.dataGrid.AppendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()], group=[4])
+        if [i for i in specType if i in path]:
+            print 'in here now'
+            self.fileType = 'spectra'#these are all generic more or less, so spectra works
+            self.dataType = 'spectra'
             colnames = ["Scan Title", "Charge", "RT", "Precursor Mass"]
             data = []
             plugins = {}
             self.dataGrid = ViewerGrid(self.gridPanel, data, colnames, plugins)
-            self.dataGrid.setType('mgf')
+            self.dataGrid.setType('spectra')
             mgf = fileIterators.mgfIterator(path, random=True)
             self.parent.mgfFiles[path] = mgf
             rnum=0
@@ -555,7 +567,7 @@ class ViewerPanel(wx.Panel):
         self.draw = DrawFrame(self)#,size=(300,300))
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(self.draw, 4,wx.EXPAND)
-        if self.fileType == 'gff':
+        if self.dataType == 'pepspectra':
             self.settings = SettingsPanel(self)
             sizer.Add(self.settings)#, 1, wx.EXPAND)
         sizer.Add(self.gridPanel, 1,wx.EXPAND)
@@ -572,6 +584,7 @@ class ViewerPanel(wx.Panel):
 #        load a scan from a gff3 of mascot/X!Tandem output
         path = self.path
         self.title=title
+#        print 'loading',title
         if self.fileType == 'gff':
             try:
                 it = self.parent.gffFiles[path]
@@ -613,7 +626,29 @@ class ViewerPanel(wx.Panel):
             self.draw.cleanup()
             self.draw.setTitle(title)
             self.plotIons(x,y,a)
-        elif self.fileType == 'mgf':
+            if self.settings.ions.IsChecked(3):
+                self.draw.plotXY(x,y)
+        elif self.fileType == 'xml':
+            scan = self.parent.pepFiles[path].getScan(title)
+            if not scan:
+                return
+            mods = scan.getModifications()
+            self.precursor = scan.getPrecursor()
+            mz = scan.getMZ()
+            x = []
+            y = []
+            for i in mz:
+                x.append(float(i[0]))
+                y.append(float(i[1]))
+#            y = np.array(y)/np.max(y)*100
+            self.pepSequence = scan.getPeptide()
+            a = figureIons(self.pepSequence,scan.getCharge(),mods, self.getTolerance())
+            self.draw.cleanup()
+            self.draw.setTitle(title)
+            self.plotIons(x,y,a)
+            if self.settings.ions.IsChecked(3):
+                self.draw.plotXY(x,y)
+        elif self.fileType == 'spectra':
             try:
                 scan = self.parent.mgfFiles[path].getScan(title)
             except:
@@ -653,14 +688,14 @@ class ViewerPanel(wx.Panel):
         if self.settings.ions2.IsChecked(2):
             ionList['c'] = a.assignABC(x,y,'c')
             self.draw.plotIons(ionList['c'], 'c')
-        self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList) 
+        self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)
         
 class SettingsPanel(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent, -1)
         self.parent = parent
         #ion selection:
-        self.ions = wx.CheckListBox(self, -1, choices=['x', 'y', 'z'])
+        self.ions = wx.CheckListBox(self, -1, choices=['x', 'y', 'z', 'unmatched'])
         self.ions.SetChecked([1])
         self.ions.Bind(wx.EVT_CHECKLISTBOX, self.onChoice)
         self.ions2 = wx.CheckListBox(self, -1, choices=['a', 'b', 'c'])
@@ -746,7 +781,7 @@ class DrawFrame(PlotPanel):
             arrowstyle = "->",
             connectionstyle = "angle,angleA=0,angleB=90,rad=10")
         self.annotate = None
-        if self.parent.fileType == 'mgf':
+        if self.parent.fileType == 'spectra':
             self.peptidePanel.Hide()
         self.canvas.mpl_connect('motion_notify_event', self.onMouseMove)
         
@@ -787,7 +822,7 @@ class DrawFrame(PlotPanel):
         else:
             nums = [i for i in xrange(len(aas))]
             col = [1.0,0.0,0.0]
-        self.points.append([x,y])
+        self.points.append(([x,y],ionType))
         self.colors.append([1.0,0.0,0.0])
         txt = []
 #        print 'adding text'
@@ -809,7 +844,7 @@ class DrawFrame(PlotPanel):
 #        self.Canvas.ClearAll()
         self.x = xco
         self.y = yco
-        self.points.append([xco,yco])
+        self.points.append(([xco,yco],'spectra'))
         self.colors.append([0.0,0.0,0.0])
         self.draw()
 
@@ -839,7 +874,8 @@ class DrawFrame(PlotPanel):
         ymax = 10
         self.hitMapX = {}
         for i,pt_list in enumerate(self.points):
-            plot_pts = np.array( pt_list )
+            plot_pts = np.array( pt_list[0] )
+            pType = pt_list[1]
 #            print plot_pts[0,:]
             xm = np.max(plot_pts[0,:])
             if (xm > xmax):
@@ -855,6 +891,10 @@ class DrawFrame(PlotPanel):
             for barEntry in self.subplot.bar( plot_pts[0,:], plot_pts[1,:], color=self.colors[i],align='center'):
 #                barEntry.set_linewidth(0)
                 barEntry.set_edgecolor(self.colors[i])
+                if pType == 'spectra':
+                    barEntry.set_zorder(0)
+                else:
+                    barEntry.set_zorder(1)
         for i in self.text:
             for x,y,text,c in i:
                 self.subplot.text(x,y,text,color=c)
@@ -868,18 +908,19 @@ class DrawFrame(PlotPanel):
         inv = self.subplot.axes.transData.inverted()
         x,y = inv.transform((event.x,event.y))
         txt = ""
-        hit=False
+        hList = []
         for i in self.hitMapX:
             if x-1 < i < x+1:
                 yco = self.hitMapX[i]
                 for j in yco:
                     if y<=j:
-                        hit=True
-                        txt+='m/z = %0.3f (Int: %0.3f)\n'%(i,j) 
+                        hList.append((i-x,i,j))
         if self.annotate:
             self.subplot.axes.texts.remove(self.annotate)
             self.annotate = None
-        if hit:
+        if hList:
+            sorted(hList,key=operator.itemgetter(0))
+            txt+='m/z = %0.3f (Int: %0.3f)\n'%(hList[0][1],hList[0][2])
             self.annotate = self.subplot.axes.annotate(txt,
             (x,y), xytext=(-2*20, 5), textcoords='offset points',
             bbox=self.bbox, arrowprops=self.arrowprops)
