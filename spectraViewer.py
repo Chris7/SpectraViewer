@@ -1001,7 +1001,7 @@ class DrawFrame(PlotPanel):
 
 app = wx.App(False)
 frame = MainFrame()
-frame.addPage('C:\Users\Chris\Desktop\A1.2012_06_07_12_20_00.t.xml')
+#frame.addPage('C:\Users\Chris\Desktop\A1.2012_06_07_12_20_00.t.xml')
 #import wx.lib.inspection
 #wx.lib.inspection.InspectionTool().Show()
 app.MainLoop()
