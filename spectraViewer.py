@@ -1,4 +1,4 @@
-import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser
+import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random
 from Bio.Data import IUPACData
 
 import numpy as np
@@ -507,9 +507,9 @@ class PeptidePanel(wx.Panel):
 #        print 'done drawing',self.peptide,w,h
         dc.EndDrawing()
         
-class ViewerPanel(wx.Panel):
+class ViewerPanel(wx.SplitterWindow):
     def __init__(self, parent, path, **kwrds):
-        wx.Panel.__init__(self, parent, -1,**kwrds)
+        wx.SplitterWindow.__init__(self, parent, -1,**kwrds)
         self.parent = parent
         self.gridPanel = wx.Panel(self, -1)
         self.gridPanel.parent = self
@@ -542,8 +542,7 @@ class ViewerPanel(wx.Panel):
                 self.parent.pepFiles[path] = pepParser
                 for i in pepParser.getScans():
                     self.dataGrid.AppendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()], group=[4])
-        if [i for i in specType if i in path]:
-            print 'in here now'
+        elif [i for i in specType if i in path]:
             self.fileType = 'spectra'#these are all generic more or less, so spectra works
             self.dataType = 'spectra'
             colnames = ["Scan Title", "Charge", "RT", "Precursor Mass"]
@@ -553,29 +552,26 @@ class ViewerPanel(wx.Panel):
             self.dataGrid.setType('spectra')
             mgf = fileIterators.mgfIterator(path, random=True)
             self.parent.mgfFiles[path] = mgf
-            rnum=0
             for i in mgf:
                 if not i:
                     continue
-                rnum+=1
                 self.dataGrid.AppendRow([i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()])
+        else:
+            data = []
+            plugins = {}
+            colnames = ["none"]
+            self.fileType = 'none'
+            self.dataType = 'none'
+            self.dataGrid = ViewerGrid(self.gridPanel, data, colnames, plugins)
+            self.dataGrid.setType('none')
         megasizer = wx.BoxSizer(wx.VERTICAL)
         megasizer.Add(self.dataGrid, 1, wx.EXPAND)
-        #self.panel2.SetSizer(megasizer)
         self.gridPanel.SetSizer(megasizer)
-        #self.dataGrid.SetSizer(megaSizer)
-        self.draw = DrawFrame(self)#,size=(300,300))
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(self.draw, 4,wx.EXPAND)
-        if self.dataType == 'pepspectra':
-            self.settings = SettingsPanel(self)
-            sizer.Add(self.settings)#, 1, wx.EXPAND)
-        sizer.Add(self.gridPanel, 1,wx.EXPAND)
-        self.SetSizer(sizer)
-        self.SetAutoLayout(1)
+        self.draw = DrawFrame(self)
+        self.SplitHorizontally(self.draw,self.gridPanel, sashPosition=self.GetSize()[1]*2/3)
         
     def getTolerance(self):
-        return float(self.settings.error.GetValue())
+        return float(self.draw.etolerance.GetValue())
         
     def reloadScan(self):
         self.loadScan(self.title)
@@ -626,7 +622,7 @@ class ViewerPanel(wx.Panel):
             self.draw.cleanup()
             self.draw.setTitle(title)
             self.plotIons(x,y,a)
-            if self.settings.ions.IsChecked(3):
+            if self.draw.ionView['all']:
                 self.draw.plotXY(x,y)
         elif self.fileType == 'xml':
             scan = self.parent.pepFiles[path].getScan(title)
@@ -646,7 +642,7 @@ class ViewerPanel(wx.Panel):
             self.draw.cleanup()
             self.draw.setTitle(title)
             self.plotIons(x,y,a)
-            if self.settings.ions.IsChecked(3):
+            if self.draw.ionView['all']:
                 self.draw.plotXY(x,y)
         elif self.fileType == 'spectra':
             try:
@@ -668,52 +664,52 @@ class ViewerPanel(wx.Panel):
         
     def plotIons(self, x,y,a):
         ionList = {}
-        if self.settings.ions.IsChecked(0):
+        if self.draw.ionView['x']:
             ionList['x'] = a.assignXYZ(x,y,'x')
             self.draw.plotIons(ionList['x'], 'x')
-        if self.settings.ions.IsChecked(1):
+        if self.draw.ionView['y']:
             ionList['y'] = a.assignXYZ(x,y,'y')
 #            print 'y ions',ionList['y']
             self.draw.plotIons(ionList['y'], 'y')
-        if self.settings.ions.IsChecked(2):
+        if self.draw.ionView['z']:
             ionList['z'] = a.assignXYZ(x,y,'z')
             self.draw.plotIons(ionList['z'], 'z')
-        if self.settings.ions2.IsChecked(0):
+        if self.draw.ionView['a']:
             ionList['a'] = a.assignABC(x,y,'a')
             self.draw.plotIons(ionList['a'], 'a')
-        if self.settings.ions2.IsChecked(1):
+        if self.draw.ionView['b']:
             ionList['b'] = a.assignABC(x,y,'b')
 #            print 'b ions', ionList['b']
             self.draw.plotIons(ionList['b'], 'b')
-        if self.settings.ions2.IsChecked(2):
+        if self.draw.ionView['c']:
             ionList['c'] = a.assignABC(x,y,'c')
             self.draw.plotIons(ionList['c'], 'c')
         self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)
         
-class SettingsPanel(wx.Panel):
-    def __init__(self, parent):
-        wx.Panel.__init__(self, parent, -1)
-        self.parent = parent
-        #ion selection:
-        self.ions = wx.CheckListBox(self, -1, choices=['x', 'y', 'z', 'unmatched'])
-        self.ions.SetChecked([1])
-        self.ions.Bind(wx.EVT_CHECKLISTBOX, self.onChoice)
-        self.ions2 = wx.CheckListBox(self, -1, choices=['a', 'b', 'c'])
-        self.ions2.SetChecked([1])
-        self.ionLabel = wx.StaticText(self,-1,'Ions to Show:')
-        self.error = wx.TextCtrl(self, -1, "0.01")
-        self.errorLabel = wx.StaticText(self,-1,'Mass Error Tolerance (da)')
-        sizer = wx.FlexGridSizer()
-        sizer.SetFlexibleDirection(wx.HORIZONTAL)
-        sizer.Add(self.ionLabel)
-        sizer.Add(self.ions)
-        sizer.Add(self.ions2)
-        sizer.Add(self.errorLabel)
-        sizer.Add(self.error) 
-        self.SetSizer(sizer)
-        
-    def onChoice(self, event):
-        self.parent.reloadScan()
+#class SettingsPanel(wx.Panel):
+#    def __init__(self, parent):
+#        wx.Panel.__init__(self, parent, -1)
+#        self.parent = parent
+#        #ion selection:
+#        self.ions = wx.CheckListBox(self, -1, choices=['x', 'y', 'z', 'unmatched'])
+#        self.ions.SetChecked([1])
+#        self.ions.Bind(wx.EVT_CHECKLISTBOX, self.onChoice)
+#        self.ions2 = wx.CheckListBox(self, -1, choices=['a', 'b', 'c'])
+#        self.ions2.SetChecked([1])
+#        self.ionLabel = wx.StaticText(self,-1,'Ions to Show:')
+#        self.error = wx.TextCtrl(self, -1, "0.01")
+#        self.errorLabel = wx.StaticText(self,-1,'Mass Error Tolerance (da)')
+#        sizer = wx.FlexGridSizer()
+#        sizer.SetFlexibleDirection(wx.HORIZONTAL)
+#        sizer.Add(self.ionLabel)
+#        sizer.Add(self.ions)
+#        sizer.Add(self.ions2)
+#        sizer.Add(self.errorLabel)
+#        sizer.Add(self.error) 
+#        self.SetSizer(sizer)
+#        
+#    def onChoice(self, event):
+#        self.parent.reloadScan()
         
                
 class PlotPanel(wx.Panel):
@@ -776,6 +772,7 @@ class DrawFrame(PlotPanel):
         self.cleanup()
         self.addFlag('y')
         self.addFlag('b')
+        self.ionView = {'x': False, 'y': True, 'z': False, 'a': False, 'b': True, 'c': False, 'all': False}
         self.bbox = dict(boxstyle="round", fc="0.8")
         self.arrowprops = dict(
             arrowstyle = "->",
@@ -784,6 +781,81 @@ class DrawFrame(PlotPanel):
         if self.parent.fileType == 'spectra':
             self.peptidePanel.Hide()
         self.canvas.mpl_connect('motion_notify_event', self.onMouseMove)
+        #toolbar stuff
+        #draw bitmaps for labels
+        tsize = self.toolbar.GetSize()[1]
+        idmap = {}
+        for ion,desc in zip(('x','y','z','a','b','c'),('X ions', 'Y Ions', 'Z Ions', 'A Ions', 'B Ions', 'C Ions')):
+            image = wx.EmptyBitmap(30,tsize*3/4)
+            lid = wx.NewId()
+            idmap[ion] = lid
+            dc = wx.MemoryDC()
+            dc.SetFont(wx.Font(15, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
+            dc.SelectObject(image)
+            dc.SetBrush(wx.Brush(self.toolbar.BackgroundColour))
+            dc.DrawRectangle(-1,-1,35,tsize)
+            dc.SetTextForeground((255,0,0))
+            dc.SetPen(wx.Pen((255,0,0)))
+            dc.DrawText(ion,7,3)
+            dc.SelectObject(wx.NullBitmap)
+            self.toolbar.AddCheckLabelTool(lid, ion, bitmap=image,shortHelp = 'Show %s'%desc)
+            if ion is 'y' or ion is 'b':
+                self.toolbar.ToggleTool(lid, True)
+        #a little icon to see all spectra
+        image = wx.EmptyBitmap(30,self.toolbar.GetSize()[1]*3/4)
+        dc = wx.MemoryDC()
+        dc.SetFont(wx.Font(15, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
+        dc.SelectObject(image)
+        dc.SetBrush(wx.Brush(self.toolbar.BackgroundColour))
+        dc.DrawRectangle(-1,-1,35,tsize)
+        dc.SetTextForeground((105,105,105))
+        dc.SetPen(wx.Pen((105,105,105)))
+        for i in xrange(0,30,random.randint(2,7)):
+            rn = float('%0.3f'%random.uniform(0.35,1.0))
+            dc.DrawRectangle(i,tsize*rn,2,tsize-tsize*rn)
+        dc.SelectObject(wx.NullBitmap)
+        lid = wx.NewId()
+        self.toolbar.AddCheckLabelTool(lid, "Spectra", bitmap=image, shortHelp="Plot Entire spectra")
+        self.Bind(wx.EVT_TOOL, self.onViewSpectra, id=lid)
+        self.Bind(wx.EVT_TOOL, self.onXIons, id=idmap['x'])
+        self.Bind(wx.EVT_TOOL, self.onYIons, id=idmap['y'])
+        self.Bind(wx.EVT_TOOL, self.onZIons, id=idmap['z'])
+        self.Bind(wx.EVT_TOOL, self.onAIons, id=idmap['a'])
+        self.Bind(wx.EVT_TOOL, self.onBIons, id=idmap['b'])
+        self.Bind(wx.EVT_TOOL, self.onCIons, id=idmap['c'])
+        #error tolerance
+        self.etolerance = wx.TextCtrl(self.toolbar, -1, "0.01",size=(30,tsize))
+        self.etolerance.SetToolTip(wx.ToolTip("Mass Error Tolerance (da)"))
+        self.toolbar.AddControl(self.etolerance)
+        self.toolbar.Realize()
+        
+    def onViewSpectra(self, event):
+        self.ionView['all'] = event.Checked()
+        self.parent.reloadScan()
+        
+    def onXIons(self, event):
+        self.ionView['x'] = event.Checked()
+        self.parent.reloadScan()
+        
+    def onYIons(self, event):
+        self.ionView['y'] = event.Checked()
+        self.parent.reloadScan()
+        
+    def onZIons(self, event):
+        self.ionView['z'] = event.Checked()
+        self.parent.reloadScan()
+        
+    def onAIons(self, event):
+        self.ionView['a'] = event.Checked()
+        self.parent.reloadScan()
+        
+    def onBIons(self, event):
+        self.ionView['b'] = event.Checked()
+        self.parent.reloadScan()
+        
+    def onCIons(self, event):
+        self.ionView['c'] = event.Checked()
+        self.parent.reloadScan()
         
     def addFlag(self, flag):
         if not self.testFlag(flag):
@@ -929,6 +1001,7 @@ class DrawFrame(PlotPanel):
 
 app = wx.App(False)
 frame = MainFrame()
+frame.addPage('C:\Users\Chris\Desktop\A1.2012_06_07_12_20_00.t.xml')
 #import wx.lib.inspection
 #wx.lib.inspection.InspectionTool().Show()
 app.MainLoop()
