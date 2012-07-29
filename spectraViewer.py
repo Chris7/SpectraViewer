@@ -122,6 +122,8 @@ class ViewerGrid(MegaGrid.MegaGrid):
         #have we grouped already?
         if self.dataSet:
             for i in self.dataSet:
+                if isinstance(self.dataSet[i][0][0],int):
+                    continue
                 rid = int(self.dataSet[i][0][0][:-3])
                 self._table.SetRowLabel(rid,rid)
                 for j in self.dataSet[i][1:]:
@@ -151,7 +153,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
         if toDelete:
             for i in toDelete:
                 self.setRowSize(i, 0)
-            self.Reset()
+        self.Reset()
                 
     def appendRow(self, inputData, **kwrds):
         row=self._table.GetNumberRows()
@@ -1111,7 +1113,7 @@ class DrawFrame(PlotPanel):
 
 app = wx.App(False)
 frame = MainFrame()
-frame.addPage('C:\Users\Chris\Desktop\A1.2012_06_07_12_20_00.t.xml')
+#frame.addPage('A1.2012_06_07_12_20_00.t.xml')
 #import wx.lib.inspection
 #wx.lib.inspection.InspectionTool().Show()
 app.MainLoop()

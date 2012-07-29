@@ -177,6 +177,7 @@ class MegaTable(Grid.PyGridTableBase):
 
     def SortColumn(self, col, reindex):
         """
+        overridden
         col -> sort the data based on the column indexed by col
         """
         name = self.colIndexes[col]
@@ -384,37 +385,6 @@ class MegaGrid(Grid.Grid):
         # Did we click on a row or a column?
         row, col = evt.GetRow(), evt.GetCol()
         if row == -1: self.colPopup(col, evt)
-        elif col == -1: self.rowPopup(row, evt)
-
-    def rowPopup(self, row, evt):
-        """(row, evt) -> display a popup menu when a row label is right clicked"""
-        appendID = wx.NewId()
-        deleteID = wx.NewId()
-        x = self.GetRowSize(row)/2
-
-        if not self.GetSelectedRows():
-            self.SelectRow(row)
-
-        menu = wx.Menu()
-        xo, yo = evt.GetPosition()
-        menu.Append(appendID, "Append Row")
-        menu.Append(deleteID, "Delete Row(s)")
-
-        def append(event, self=self, row=row):
-            self._table.AppendRow(row)
-            self.Reset()
-
-        def delete(event, self=self, row=row):
-            rows = self.GetSelectedRows()
-            self._table.DeleteRows(rows)
-            self.Reset()
-
-        self.Bind(wx.EVT_MENU, append, id=appendID)
-        self.Bind(wx.EVT_MENU, delete, id=deleteID)
-        self.PopupMenu(menu)
-        menu.Destroy()
-        return
-
 
     def colPopup(self, col, evt):
         """(col, evt) -> display a popup menu when a column label is
