@@ -638,7 +638,7 @@ class ViewerPanel(wx.SplitterWindow):
                 y.append(float(i[1]))
 #            y = np.array(y)/np.max(y)*100
             self.pepSequence = scan.getPeptide()
-            a = figureIons(self.pepSequence,scan.getCharge(),mods, self.getTolerance())
+            a = figureIons(self.pepSequence,1,mods, self.getTolerance())#for some reason x!Tandem treats everything as a single charge
             self.draw.cleanup()
             self.draw.setTitle(title)
             self.plotIons(x,y,a)
