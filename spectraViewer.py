@@ -25,31 +25,137 @@ class ViewerGrid(MegaGrid.MegaGrid):
     def __init__(self, *args, **kwrds):
         MegaGrid.MegaGrid.__init__(self, *args, **kwrds)
         self.gridType = None
-        self.dataSet = {}
+        self.dataSet = {}#used for storing groups of protein
+        self.groupBy = None
+        self.newGroup = False
+        self.Bind(wx.grid.EVT_GRID_LABEL_LEFT_CLICK, self.onLabelLeftClick)
         
-    def AppendRow(self, inputData, **kwrds):
+    def onLabelLeftClick(self, evt):
+        row, col = evt.GetRow(), evt.GetCol()
+        if self.groupBy:
+            if col == -1: self.rowUnGroup(row, evt)
+            
+    def setRowSize(self,row, size):
+        self.SetRowMinimalHeight(row,size)
+        self.SetRowSize(row,size)
+                
+    def rowUnGroup(self, row, event):
+        grouper = self.dataSet[self._table.GetValue(row,self.groupBy)]
+        pid = grouper[0][0]
+        if isinstance(pid,int):
+            return
+        if pid[:-3] != str(row):
+            return
+        if pid[-2] == '+':
+            txt = pid.replace('+','-')
+            self._table.SetRowLabel(int(pid[:-3]),txt)
+            rsize = 20
+        else:
+            txt = pid.replace('-','+')
+            self._table.SetRowLabel(int(pid[:-3]),txt)
+            rsize = 0
+        grouper[0] = (txt,grouper[0][1])
+        for i in grouper[1:]:
+            self.setRowSize(i[0],rsize)
+        self.Reset()
+        
+    def colPopup(self, col, evt):
+        """(col, evt) -> display a popup menu when a column label is
+        right clicked"""
+        x = self.GetColSize(col)/2
+        menu = wx.Menu()
+        id1 = wx.NewId()
+        sortID = wx.NewId()
+        groupID = wx.NewId()
+
+        xo, yo = evt.GetPosition()
+        self.SelectCol(col)
+        cols = self.GetSelectedCols()
+        self.Refresh()
+        menu.Append(sortID, "Sort Column")
+        menu.Append(groupID, "Group By Column")
+
+        def sort(event, self=self, col=col):
+            self.SortColumn(col, False)
+            self.Reset()
+            
+        def group(event, self=self, col=col):
+            self.groupBy=col
+            self.newGroup = True
+            self.regroup()
+
+        self.Bind(wx.EVT_MENU, group, id=groupID)
+
+        if len(cols) == 1:
+            self.Bind(wx.EVT_MENU, sort, id=sortID)
+
+        self.PopupMenu(menu)
+        menu.Destroy()
+        return
+    
+    def SortColumn(self, col, reindex):
+        """
+        col -> sort the data based on the column indexed by col
+        """
+        name = self._table.colIndexes[col]
+        _data = []
+
+        for row in self._table.data:
+            rowname, entry = row
+            _data.append((entry.get(name, None), row))
+
+        _data.sort()
+        if self.newGroup:
+            self._table.data = []
+            self.newGroup = False
+            for index,row in enumerate(_data):
+                    if reindex: #changed so the row index is changed with sorting
+                        self._table.data.append((index,row[1][1]))
+                    else:
+                        self._table.data.append(row[1])
+        elif not self.groupBy:
+            self._table.data = []
+            for row in _data:
+                self._table.data.append(row)
+    
+    def regroup(self):
+        #have we grouped already?
+        if self.dataSet:
+            for i in self.dataSet:
+                rid = int(self.dataSet[i][0][0][:-3])
+                self._table.SetRowLabel(rid,rid)
+                for j in self.dataSet[i][1:]:
+                    self.setRowSize(j[0],20)
+        #first we sort so things get nested properly
+        self.SortColumn(self.groupBy, True)
+        self.SetRowMinimalAcceptableHeight(0)
+#        self.SetDefaultRowSize(0,False)
+        self.dataSet = {}
+        gset = self.dataSet
+        col = self._table.GetColLabelValue(self.groupBy)
+        toDelete = []
+        for i in self._table.data:
+            groupby = i[1][col]
+            try:
+                gset[groupby]#we have it already? 
+                gset[groupby].append(i)
+                toDelete.append(i[0])
+            except KeyError:
+                #nope, we don't have it
+                gset[groupby] = [i]
+        for i in gset.keys():
+            if len(gset[i])>1:
+                row = gset[i][0]
+                self._table.SetRowLabel(row[0],'%d(+)'%row[0])
+                gset[i][0] = ('%d(+)'%row[0],row[1]) 
+        if toDelete:
+            for i in toDelete:
+                self.setRowSize(i, 0)
+            self.Reset()
+                
+    def appendRow(self, inputData, **kwrds):
         row=self._table.GetNumberRows()
-        if kwrds:
-            if kwrds.has_key('unique'):
-                tup = tuple([inputData[i] for i in kwrds['unique']])
-                if self.dataSet.has_key(tup):
-                    return
-                self.dataSet[tup] = row
-            if kwrds.has_key('group'):
-                tup = tuple([inputData[i] for i in kwrds['group']])
-                try:
-                    index = self.dataSet[tup]
-                    for i in xrange(0,len(inputData)):
-                        val = self._table.GetValue(index,i)
-                        if val and val != inputData[i] and inputData[i] not in val:
-                            self._table.SetValue(index,i,val+','+inputData[i])
-                    #del self.dataSet[tup]
-                    #MegaGrid.MegaGrid.SetRowValue(self,index,val)
-                    return
-                except KeyError:
-                    pass
-                self.dataSet[tup] = row
-        MegaGrid.MegaGrid.AppendRow(self,row,inputData)
+        self.AppendRow(row,inputData)
         
     def setType(self, gridType):
         self.gridType = gridType.lower()
@@ -534,14 +640,14 @@ class ViewerPanel(wx.SplitterWindow):
     #                rnum+=1
                     sid = i.getAttribute('SpectraId1')
                     if sid:
-                        self.dataGrid.AppendRow([sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')], group=[4])
+                        self.dataGrid.appendRow([sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')])
     #                if rnum>50:
     #                    break
             elif self.fileType == 'xml':
                 pepParser = fileIterators.spectraXML(path)
                 self.parent.pepFiles[path] = pepParser
                 for i in pepParser.getScans():
-                    self.dataGrid.AppendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()], group=[4])
+                    self.dataGrid.appendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()])
         elif [i for i in specType if i in path]:
             self.fileType = 'spectra'#these are all generic more or less, so spectra works
             self.dataType = 'spectra'
@@ -555,7 +661,7 @@ class ViewerPanel(wx.SplitterWindow):
             for i in mgf:
                 if not i:
                     continue
-                self.dataGrid.AppendRow([i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()])
+                self.dataGrid.appendRow([i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()])
         else:
             data = []
             plugins = {}
@@ -574,7 +680,11 @@ class ViewerPanel(wx.SplitterWindow):
         return float(self.draw.etolerance.GetValue())
         
     def reloadScan(self):
-        self.loadScan(self.title)
+        try:
+            self.loadScan(self.title)
+        except AttributeError:
+            #no scans loaded yet
+            return
         
     def loadScan(self, title):
 #        load a scan from a gff3 of mascot/X!Tandem output
@@ -1001,7 +1111,7 @@ class DrawFrame(PlotPanel):
 
 app = wx.App(False)
 frame = MainFrame()
-#frame.addPage('C:\Users\Chris\Desktop\A1.2012_06_07_12_20_00.t.xml')
+frame.addPage('C:\Users\Chris\Desktop\A1.2012_06_07_12_20_00.t.xml')
 #import wx.lib.inspection
 #wx.lib.inspection.InspectionTool().Show()
 app.MainLoop()

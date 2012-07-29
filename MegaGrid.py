@@ -1,3 +1,4 @@
+#from http://wxpython-users.1045709.n5.nabble.com/MegaGrid-Example-Shows-how-to-resize-virtual-grids-td2299061.html
 import  wx, itertools, operator, math
 import  wx.grid as  Grid
 
@@ -50,7 +51,7 @@ class MegaTable(Grid.PyGridTableBase):
         return self.hiddencols[col]
     
     def GetRowLabelValue(self, row):
-        return "%d" % int(self.data[row][0])
+        return "%s" % str(self.data[row][0])
 
     def GetValue(self, row, col):
         return str(self.data[row][1].get(self.GetColLabelValue(col), ""))
@@ -72,7 +73,6 @@ class MegaTable(Grid.PyGridTableBase):
             (self._rows, self.GetNumberRows(), Grid.GRIDTABLE_NOTIFY_ROWS_DELETED, Grid.GRIDTABLE_NOTIFY_ROWS_APPENDED),
             (self._cols, self.GetNumberCols(), Grid.GRIDTABLE_NOTIFY_COLS_DELETED, Grid.GRIDTABLE_NOTIFY_COLS_APPENDED),
         ]:
-
             if new < current:
                 msg = Grid.GridTableMessage(self,delmsg,new,current-new)
                 grid.ProcessTableMessage(msg)
@@ -170,8 +170,12 @@ class MegaTable(Grid.PyGridTableBase):
             # we need to advance the delete count
             # to make sure we delete the right rows
             deleteCount += 1
+            
+    def SetRowLabel(self, row, value):
+        _data = self.data[row]
+        self.data[row] = (value,_data[1])
 
-    def SortColumn(self, col):
+    def SortColumn(self, col, reindex):
         """
         col -> sort the data based on the column indexed by col
         """
@@ -184,9 +188,11 @@ class MegaTable(Grid.PyGridTableBase):
 
         _data.sort()
         self.data = []
-
-        for sortvalue, row in _data:
-            self.data.append(row)
+        for index,row in enumerate(_data):
+            if reindex: #changed so the row index is changed with sorting
+                self.data.append((index,row[1][1]))
+            else:
+                self.data.append(row[1])
 
     # end table manipulation code
     # ----------------------------------------------------------
@@ -198,6 +204,9 @@ class MegaTable(Grid.PyGridTableBase):
 
 
 class MegaFontRenderer(Grid.PyGridCellRenderer):
+    """
+    Changed from a generic font rendered to a specific one meant to display a grouped set of peptides
+    """
     def __init__(self, table, color="blue", font="ARIAL", fontsize=8):
         """Render data in the specified color and font and fontsize"""
         Grid.PyGridCellRenderer.__init__(self)
@@ -207,7 +216,7 @@ class MegaFontRenderer(Grid.PyGridCellRenderer):
         self.selectedBrush = wx.Brush("blue", wx.SOLID)
         self.normalBrush = wx.Brush(wx.WHITE, wx.SOLID)
         self.colSize = None
-        self.rowSize = 50
+        self.rowSize = 0
 
     def Draw(self, grid, attr, dc, rect, row, col, isSelected):
         # Here we draw text in a grid cell using various fonts
@@ -357,6 +366,9 @@ class MegaGrid(Grid.Grid):
        self._table.AppendRow(rowindex, data)
        self.Reset()
        
+    def InsertRow(self, rowindex, data):
+        self._table.InsertRow(rowindex, data)
+       
     def OnCellRightClick(self, event):
        row, col = event.GetRow(), event.GetCol()
        self.cellPopup(row, col, event)
@@ -416,19 +428,12 @@ class MegaGrid(Grid.Grid):
         self.SelectCol(col)
         cols = self.GetSelectedCols()
         self.Refresh()
-        menu.Append(id1, "Delete Col(s)")
+#        menu.Append(id1, "Delete Col(s)")
         menu.Append(sortID, "Sort Column")
 
-        def delete(event, self=self, col=col):
-            cols = self.GetSelectedCols()
-            self._table.DeleteCols(cols)
-            self.Reset()
-
         def sort(event, self=self, col=col):
-            self._table.SortColumn(col)
+            self._table.SortColumn(col, False)
             self.Reset()
-
-        self.Bind(wx.EVT_MENU, delete, id=id1)
 
         if len(cols) == 1:
             self.Bind(wx.EVT_MENU, sort, id=sortID)
