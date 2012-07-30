@@ -1,28 +1,8 @@
-import re, os
+import re, os, masses
 try:
     from lxml import etree
 except ImportError:
     print 'lxml is required to parse X!tandem xml files due to the namespaces employed'
-    
-    
-mod_weights = {'h': 1.007825,
-               'h2o': 18.010565,
-               'h2o': 18.0106,
-               'nh3': 17.026549,
-               'methylation': 14.015650,
-               'oxidation': 15.994915,
-               'acetylation': 42.010565,
-               'acetylation': 42.0106,
-               'carbamidation': 57.021464,
-               'carboxylation': 58.005479,
-               'phosphorylation': 79.966330,
-               'amidation': 0.984016,
-               'formylation': 27.994915,
-               'cho': 29.002739665,
-               'nh2': 16.01872407,
-               'co': 27.99491463,
-               'oh': 17.00274
-               }
 
 class scanObject(object):
     """
@@ -106,8 +86,8 @@ class peptideObject(scanObject):
             if modMass[0] == '-':
                 modMass=modMass[1:]
             modType = ""
-            for i in mod_weights:
-                if modMass in str(mod_weights[i]):
+            for i in masses.mod_weights:
+                if modMass in str(masses.mod_weights[i]):
                     #found it
                     modType = i
             if not modType:
@@ -638,7 +618,7 @@ class indexFolder():
     def __init__(self, folder):
         for root,dirs,files in os.walk(folder):
             for fileName in files:
-                if fileName.find('.mgf') != -1 and fileName.find('.mgfi') == -1:
+                if '.mgf' in fileName and '.mgfi' not in fileName:
                     mgfIterator(os.path.join(root,fileName))
 
 class mgfParser(object):

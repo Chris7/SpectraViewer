@@ -1,5 +1,4 @@
-import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random
-from Bio.Data import IUPACData
+import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, masses, matplotlib as mpl
 
 import numpy as np
 
@@ -7,19 +6,19 @@ import numpy as np
 #from http://wiki.wxpython.org/DragAndDrop
 class FileDropTarget(wx.FileDropTarget):
    """ This object implements Drop Target functionality for Files """
-   def __init__(self, obj, pFrame):
+   def __init__(self, parent):
       """ Initialize the Drop Target, passing in the Object Reference to
           indicate what should receive the dropped files """
       # Initialize the wxFileDropTarget Object
       wx.FileDropTarget.__init__(self)
       # Store the Object Reference for dropped files
-      self.pFrame = pFrame
+      self.parent = parent
 
    def OnDropFiles(self, x, y, filenames):
       """ Implement File Drop """
       for file in filenames:
 #         print file
-         self.pFrame.addPage(file)
+         self.parent.addPage(file)
 
 class ViewerGrid(MegaGrid.MegaGrid):
     def __init__(self, *args, **kwrds):
@@ -72,7 +71,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
         self.SelectCol(col)
         cols = self.GetSelectedCols()
         self.Refresh()
-        menu.Append(sortID, "Sort Column")
+        menu.Append(sortID, "Sort Column (disabled after grouping)")
         menu.Append(groupID, "Group By Column")
 
         def sort(event, self=self, col=col):
@@ -131,7 +130,6 @@ class ViewerGrid(MegaGrid.MegaGrid):
         #first we sort so things get nested properly
         self.SortColumn(self.groupBy, True)
         self.SetRowMinimalAcceptableHeight(0)
-#        self.SetDefaultRowSize(0,False)
         self.dataSet = {}
         gset = self.dataSet
         col = self._table.GetColLabelValue(self.groupBy)
@@ -163,94 +161,14 @@ class ViewerGrid(MegaGrid.MegaGrid):
         self.gridType = gridType.lower()
         
     def cellPopup(self, row, col, event):
-        """(row, col, evt) -> display a popup menu when a cell is right clicked"""
+        """(row, col, evt) -> display a spectra when cell is right clicked """
         if not self.gridType:
             return
-        viewSequence = wx.NewId()
-        x = self.GetRowSize(row)/2
-        y = self.GetColSize(col)/2
-
-        #menu = wx.Menu()
-        xo, yo = event.GetPosition()
-        #menu.Append(viewSequence, "View Sequence")
-        tidList = {}
+        title = self._table.GetValue(row, 0)
+        self.parent.parent.loadScan(title)
+        return
         
-        def onViewMultiSequence(event, self=self, row=row):
-            self.parent.parent.loadScan(tidList[event.GetId()])
-            return
-        
-        #def onViewSequence(event, self=self, row=row):
-        if self.gridType == 'spectra':
-            title = self._table.GetValue(row, 0)
-            #path = self._table.GetHiddenValue(row, 0)
-            self.parent.parent.loadScan(title)
-            return
-        elif self.gridType == 'pepspectra':
-            title = self._table.GetValue(row, 0)
-            titles = title.split(',')
-#            if len(titles) > 1:
-#                print type(self.parent)
-            menua = wx.Menu()
-            for i in titles:
-                tid = wx.NewId()
-                menua.Append(tid, i)
-                tidList[tid] = i
-                self.Bind(wx.EVT_MENU,onViewMultiSequence,id=tid)
-#            else:
-#                self.parent.parent.loadGFFScan(title)
-            self.PopupMenu(menua)
-            menua.Destroy()
-            return
-        else:
-            return
-            
-#        self.Bind(wx.EVT_MENU, onViewSequence, id=viewSequence)
-#        self.PopupMenu(menu)
-#        menu.Destroy()
-#        return
 
-#masses from: http://www.weddslist.com/ms/tables.html#tm4
-#protein weights with some mascot custom mods too
-protein_weights =  {'G': 57.021464,
-                    'A': 71.037114,
-                    'S': 87.032028,
-                    'P': 97.052764,
-                    'V': 99.068414,
-                    'T': 101.047678,
-                    'C': 103.009184,
-                    'I': 113.084064,
-                    'L': 113.084064,
-                    'N': 114.042927,
-                    'D': 115.026943,
-                    'Q': 128.058578,
-                    'K': 128.094963,
-                    'E': 129.042593,
-                    'M': 131.040485,
-                    'H': 137.058912,
-                    'F': 147.068414,
-                    'R': 156.101111,
-                    'Y': 163.063329,
-                    'W': 186.079313
-                    }
-
-mod_weights = {'h': 1.007825,
-               'h2o': 18.010565,
-               'nh3': 17.026549,
-               'ch2': 14.015650,
-               'methylation': 14.015650,
-               'o': 15.994915,
-               'oxidation': 15.994915,
-               'acetylation': 42.010565,
-               'carbamidation': 57.021464,
-               'carboxylation': 58.005479,
-               'phosphorylation': 79.966330,
-               'amidation': 0.984016,
-               'formylation': 27.994915,
-               'cho': 29.002739665,
-               'nh2': 16.01872407,
-               'co': 27.99491463,
-               'oh': 17.00274
-               }
 modParse = re.compile('([A-Z])(\d+)\((.+)\)')
 class figureIons(object):
     def __init__(self,seq,charge,mods, tolerance):
@@ -264,48 +182,37 @@ class figureIons(object):
         self.z=[]
         modList = {}
         charge = int(charge)
-        hcharge = mod_weights['h']*charge
+        hcharge = masses.mod_weights['h']*charge
         if mods:
             mods = mods.split('|')
             for mod in mods:
                 modification, start, modType = modParse.search(mod).groups()
                 modList[int(start)] = modType.lower()
         for i,v in enumerate(self.sequence):
-            mass+=protein_weights[v]
+            mass+=masses.protein_weights[v]
             try:
-                mass+=mod_weights[modList[i+1]]
-#                print v,'b ion modified by',modList[i+1]
+                mass+=masses.mod_weights[modList[i+1]]
             except KeyError:
                 pass
-            self.a.append((mass-mod_weights['cho']+mod_weights['h']+hcharge)/charge)
-            self.b.append((mass+mod_weights['h']-mod_weights['h']+hcharge)/charge)
-            self.c.append((mass+mod_weights['nh2']+mod_weights['h']+hcharge)/charge)
+            self.a.append((mass-masses.mod_weights['cho']+masses.mod_weights['h']+hcharge)/charge)
+            self.b.append((mass+masses.mod_weights['h']-masses.mod_weights['h']+hcharge)/charge)
+            self.c.append((mass+masses.mod_weights['nh2']+masses.mod_weights['h']+hcharge)/charge)
         self.c.pop()
         self.c.append(9999999)
-#        mass+=18.010565
         sLen = len(self.sequence)
         for i,v in enumerate(self.sequence):
             if i == 0:
                 self.x.append(0)
             else:
-                self.x.append((mass+mod_weights['co']+mod_weights['oh']-mod_weights['h']+hcharge)/charge)
-            self.y.append((mass+mod_weights['h']+mod_weights['oh']+hcharge)/charge)
-            self.z.append((mass-mod_weights['nh2']+mod_weights['oh']+hcharge)/charge)
-            mass-=protein_weights[v]
-#            print i,sLen,v
+                self.x.append((mass+masses.mod_weights['co']+masses.mod_weights['oh']-masses.mod_weights['h']+hcharge)/charge)
+            self.y.append((mass+masses.mod_weights['h']+masses.mod_weights['oh']+hcharge)/charge)
+            self.z.append((mass-masses.mod_weights['nh2']+masses.mod_weights['oh']+hcharge)/charge)
+            mass-=masses.protein_weights[v]
             try:
-                mass-=mod_weights[modList[i+1]]
-#                print v, 'y ion modified by',modList[i+1]
+                mass-=masses.mod_weights[modList[i+1]]
             except KeyError:
                 pass
         self.tolerance = tolerance
-        #self.y.reverse()
-#        print self.a
-#        print self.b
-#        print self.c
-#        print self.x
-#        print self.y
-#        print self.z
 
     def assignABC(self, x, y, atype):
         """
@@ -340,10 +247,8 @@ class figureIons(object):
         """
         given a list of masses, assigns ions from a sequence
         """
-        #a = figureIons('GGGFGGGSSFGGGSGFSGGGFGGGGFGGGR',2)
         start = len(x)
         self.ySeries = []
-#        print self.sequence
         seq = list(self.sequence)
         seq.reverse()
         seq = ''.join(seq)
@@ -354,10 +259,8 @@ class figureIons(object):
         if atype == 'z':
             iseq = self.z
         for seqindex,yi in enumerate(iseq):
-#            print yi
             candidates = []
             seen = False
-#            print seqindex
             for index,m in enumerate(x[:start]):
                 if yi > m-self.tolerance and yi < m+self.tolerance:
                     seen = True
@@ -366,7 +269,6 @@ class figureIons(object):
                     start=index
                     break
             if candidates:
-#                print len(candidates)
                 candidates.sort(key=operator.itemgetter(1))
                 self.ySeries.append(candidates[0])
             else:
@@ -382,10 +284,8 @@ def loadFolder(path):
     global searchPaths,fileNames
     for root,dir,files in os.walk(path):
         for fileName in files:
-            pos = fileName.find('.mgf')
-            pos2 = fileName.find('.mgfi')
-            if pos != -1 and pos2 == -1:
-                fileNames[fileName[:pos]] = os.path.join(root,fileName)
+            if '.mgf' in fileName and '.mgfi' not in fileName:
+                fileNames[fileName[:findName.find('.mgf')]] = os.path.join(root,fileName)
     searchPaths.add(path)
 
 def loadConfig():
@@ -413,18 +313,16 @@ class MainFrame(wx.Frame):
     def __init__(self):
         wx.Frame.__init__(self, None, -1, "MGF Viewer", size=(1000,700))
         loadConfig()
-#        self.tabPanel = wx.Panel(self, -1, size=self.GetSize())
         self._mgr = wx.aui.AuiManager()
         self.nb = wx.aui.AuiNotebook(self, size=self.GetSize())
         self._mgr.AddPane(self.nb, wx.aui.AuiPaneInfo().Name("notebook_content").CenterPane().PaneBorder(False))
         self.tabs = {}
-        #plugins = {"Gene Id":MegaGrid.MegaFontRendererFactory("red", "ARIAL", 8),}
         self.mgfFiles = {}
         self.gffFiles = {}
         self.pepFiles = {}
-        dt3 = FileDropTarget(self.nb, self)
+        dt3 = FileDropTarget(self)
        # Link the Drop Target Object to the Text Control
-        self.nb.SetDropTarget(dt3)
+        self.SetDropTarget(dt3)
         #menu bar
         menuBar = wx.MenuBar()
         menu = wx.Menu()
@@ -478,13 +376,8 @@ class PeptidePanel(wx.Panel):
         dc.BeginDrawing()
         w = dc.GetSize()[0]
         h = dc.GetSize()[1]
-        
-#            self.SetSize((w,200))
-#            h = 200
-        #write the peptide
         dc.SetBrush(wx.RED_BRUSH)
         tpos=0
-#        print self.ions
         try:
             x = self.ions['x']
         except KeyError:
@@ -536,7 +429,6 @@ class PeptidePanel(wx.Panel):
             tw,th = dc.GetTextExtent("10")
         ih=th
         while (th*1.25+ih*2 <= h*1/2) and (tw*len(self.peptide) < w*1/2):
-#            print th, h, tw, w
             dc.SetFont(wx.Font(fsize, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
             try:
                 tw,th = dc.GetTextExtent(pp)
@@ -554,7 +446,6 @@ class PeptidePanel(wx.Panel):
             dc.SetPen(wx.Pen((0,0,0)))
             dc.DrawText(v, lx-tw/2,cy-th/2)
             dc.SetFont(wx.Font(isize, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
-#            print i,y[i]
             ixw,ixh = dc.GetTextExtent('x')
             iyw,iyh = dc.GetTextExtent('y')
             izw,izh = dc.GetTextExtent('z')
@@ -575,7 +466,6 @@ class PeptidePanel(wx.Panel):
                 dc.SetTextForeground((0,0,255))
                 dc.DrawText("x", lx+tw,xy-ixh/2)
             if y and y[i]:
-#                print y[i]
                 #we're x/y/z ions, we go in reverse
                 yy = cy-th/2-ixh
                 dc.SetPen(wx.Pen((0,0,255)))
@@ -583,7 +473,6 @@ class PeptidePanel(wx.Panel):
                 dc.SetTextForeground((0,0,255))
                 dc.DrawText("y", lx+tw,yy-iyh/2)
             if z and z[i]:
-#                print y[i]
                 #we're x/y/z ions, we go in reverse
                 zy = cy-th/2
                 dc.SetPen(wx.Pen((0,0,255)))
@@ -608,11 +497,7 @@ class PeptidePanel(wx.Panel):
                 dc.DrawLine(lx,cy2,lx+tw/2,cy2)
                 dc.SetTextForeground((255,0,0))
                 dc.DrawText("c", lx-iw,cy2-ich/2)
-                #dc.DrawLine()
             lx+=tw+5
-            #draw any needed ions
-            
-#        print 'done drawing',self.peptide,w,h
         dc.EndDrawing()
         
 class ViewerPanel(wx.SplitterWindow):
@@ -689,11 +574,10 @@ class ViewerPanel(wx.SplitterWindow):
             return
         
     def loadScan(self, title):
-#        load a scan from a gff3 of mascot/X!Tandem output
         path = self.path
         self.title=title
-#        print 'loading',title
         if self.fileType == 'gff':
+#        load a scan from a gff3 of mascot/X!Tandem output
             try:
                 it = self.parent.gffFiles[path]
             except KeyError:
@@ -714,11 +598,9 @@ class ViewerPanel(wx.SplitterWindow):
                     scan = mgf.getScan(title)
                 except StopIteration:
                     scan = None
-    #        print title,scan
             if not scan:
                 title = gob.getAttribute('SpectraId2')
                 scan = self.parent.mgfFiles[path].getScan(title)
-    #            print title,scan
                 if not scan:
                     return
             self.precursor = scan.getPrecursor()
@@ -781,7 +663,6 @@ class ViewerPanel(wx.SplitterWindow):
             self.draw.plotIons(ionList['x'], 'x')
         if self.draw.ionView['y']:
             ionList['y'] = a.assignXYZ(x,y,'y')
-#            print 'y ions',ionList['y']
             self.draw.plotIons(ionList['y'], 'y')
         if self.draw.ionView['z']:
             ionList['z'] = a.assignXYZ(x,y,'z')
@@ -791,44 +672,15 @@ class ViewerPanel(wx.SplitterWindow):
             self.draw.plotIons(ionList['a'], 'a')
         if self.draw.ionView['b']:
             ionList['b'] = a.assignABC(x,y,'b')
-#            print 'b ions', ionList['b']
             self.draw.plotIons(ionList['b'], 'b')
         if self.draw.ionView['c']:
             ionList['c'] = a.assignABC(x,y,'c')
             self.draw.plotIons(ionList['c'], 'c')
-        self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)
-        
-#class SettingsPanel(wx.Panel):
-#    def __init__(self, parent):
-#        wx.Panel.__init__(self, parent, -1)
-#        self.parent = parent
-#        #ion selection:
-#        self.ions = wx.CheckListBox(self, -1, choices=['x', 'y', 'z', 'unmatched'])
-#        self.ions.SetChecked([1])
-#        self.ions.Bind(wx.EVT_CHECKLISTBOX, self.onChoice)
-#        self.ions2 = wx.CheckListBox(self, -1, choices=['a', 'b', 'c'])
-#        self.ions2.SetChecked([1])
-#        self.ionLabel = wx.StaticText(self,-1,'Ions to Show:')
-#        self.error = wx.TextCtrl(self, -1, "0.01")
-#        self.errorLabel = wx.StaticText(self,-1,'Mass Error Tolerance (da)')
-#        sizer = wx.FlexGridSizer()
-#        sizer.SetFlexibleDirection(wx.HORIZONTAL)
-#        sizer.Add(self.ionLabel)
-#        sizer.Add(self.ions)
-#        sizer.Add(self.ions2)
-#        sizer.Add(self.errorLabel)
-#        sizer.Add(self.error) 
-#        self.SetSizer(sizer)
-#        
-#    def onChoice(self, event):
-#        self.parent.reloadScan()
-        
+        self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)        
                
 class PlotPanel(wx.Panel):
     #modified from this sourcE:
     #http://www.scipy.org/Matplotlib_figure_in_a_wx_panel
-    """The PlotPanel has a Figure and a Canvas. OnSize events simply set a 
-    flag, and the actual resizing of the figure is triggered by an Idle event."""
     def __init__( self, parent, color=None, dpi=None, **kwargs ):
         from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg
         from matplotlib.backends.backend_wxagg import NavigationToolbar2WxAgg as NavigationToolbar
@@ -851,7 +703,6 @@ class PlotPanel(wx.Panel):
         self.SetColor( color )
         self.vbox = wx.FlexGridSizer(1,1)
         self.vbox.AddGrowableCol(0)
-#        self.vbox.AddGrowableRow(1)
         self.vbox.AddGrowableRow(2)
         self.peptidePanel = PeptidePanel(self)
         self.vbox.Add(self.toolbar,0,wx.EXPAND)
@@ -922,7 +773,7 @@ class DrawFrame(PlotPanel):
         dc.DrawRectangle(-1,-1,35,tsize)
         dc.SetTextForeground((105,105,105))
         dc.SetPen(wx.Pen((105,105,105)))
-        for i in xrange(0,30,random.randint(2,7)):
+        for i in xrange(0,30,3):
             rn = float('%0.3f'%random.uniform(0.35,1.0))
             dc.DrawRectangle(i,tsize*rn,2,tsize-tsize*rn)
         dc.SelectObject(wx.NullBitmap)
@@ -936,7 +787,7 @@ class DrawFrame(PlotPanel):
         self.Bind(wx.EVT_TOOL, self.onBIons, id=idmap['b'])
         self.Bind(wx.EVT_TOOL, self.onCIons, id=idmap['c'])
         #error tolerance
-        self.etolerance = wx.TextCtrl(self.toolbar, -1, "0.01",size=(30,tsize))
+        self.etolerance = wx.TextCtrl(self.toolbar, -1, "0.01",size=(50,tsize))
         self.etolerance.SetToolTip(wx.ToolTip("Mass Error Tolerance (da)"))
         self.toolbar.AddControl(self.etolerance)
         self.toolbar.Realize()
@@ -1018,9 +869,7 @@ class DrawFrame(PlotPanel):
                 self.hitMapX[int(x)].append((aa,y))
             except:
                 self.hitMapX[int(x)] = [(aa,y)]
-#            print ionType,x,y+5,ionType+str(ind+1)
             txt.append((x,y+2,ionType+str(ind+1),col))
-#            txt.append((x,y+5,aa,col))
         self.text.append(txt)
         self.draw()
    
@@ -1060,7 +909,6 @@ class DrawFrame(PlotPanel):
         for i,pt_list in enumerate(self.points):
             plot_pts = np.array( pt_list[0] )
             pType = pt_list[1]
-#            print plot_pts[0,:]
             xm = np.max(plot_pts[0,:])
             if (xm > xmax):
                 xmax = xm
