@@ -1,4 +1,4 @@
-import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, masses, matplotlib as mpl
+import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, matplotlib as mpl, figureIons
 
 import numpy as np
 
@@ -17,7 +17,6 @@ class FileDropTarget(wx.FileDropTarget):
    def OnDropFiles(self, x, y, filenames):
       """ Implement File Drop """
       for file in filenames:
-#         print file
          self.parent.addPage(file)
 
 class ViewerGrid(MegaGrid.MegaGrid):
@@ -169,111 +168,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
         return
         
 
-modParse = re.compile('([A-Z])(\d+)\((.+)\)')
-class figureIons(object):
-    def __init__(self,seq,charge,mods, tolerance):
-        self.sequence=seq.upper()
-        mass = 0
-        self.a=[]
-        self.b=[]
-        self.c=[]
-        self.x=[]
-        self.y=[]
-        self.z=[]
-        modList = {}
-        charge = int(charge)
-        hcharge = masses.mod_weights['h']*charge
-        if mods:
-            mods = mods.split('|')
-            for mod in mods:
-                modification, start, modType = modParse.search(mod).groups()
-                modList[int(start)] = modType.lower()
-        for i,v in enumerate(self.sequence):
-            mass+=masses.protein_weights[v]
-            try:
-                mass+=masses.mod_weights[modList[i+1]]
-            except KeyError:
-                pass
-            self.a.append((mass-masses.mod_weights['cho']+masses.mod_weights['h']+hcharge)/charge)
-            self.b.append((mass+masses.mod_weights['h']-masses.mod_weights['h']+hcharge)/charge)
-            self.c.append((mass+masses.mod_weights['nh2']+masses.mod_weights['h']+hcharge)/charge)
-        self.c.pop()
-        self.c.append(9999999)
-        sLen = len(self.sequence)
-        for i,v in enumerate(self.sequence):
-            if i == 0:
-                self.x.append(0)
-            else:
-                self.x.append((mass+masses.mod_weights['co']+masses.mod_weights['oh']-masses.mod_weights['h']+hcharge)/charge)
-            self.y.append((mass+masses.mod_weights['h']+masses.mod_weights['oh']+hcharge)/charge)
-            self.z.append((mass-masses.mod_weights['nh2']+masses.mod_weights['oh']+hcharge)/charge)
-            mass-=masses.protein_weights[v]
-            try:
-                mass-=masses.mod_weights[modList[i+1]]
-            except KeyError:
-                pass
-        self.tolerance = tolerance
 
-    def assignABC(self, x, y, atype):
-        """
-        given a list of masses, assigns ions from a sequence
-        """
-        start = 0
-        self.bSeries = []
-        if atype == 'a':
-            iseq = self.a
-        if atype == 'b':
-            iseq = self.b
-        if atype == 'c':
-            iseq = self.c
-        for seqindex,b in enumerate(iseq):
-            candidates = []
-            seen = False
-            for index,m in enumerate(x[start:]):
-                if b > m-self.tolerance and b < m+self.tolerance:
-                    seen = True
-                    candidates.append((x[start+index],y[start+index],self.sequence[seqindex], index))
-                elif b > m+self.tolerance and seen:
-                    start=index
-                    break
-            if candidates:
-                candidates.sort(key=operator.itemgetter(1))
-                self.bSeries.append(candidates[0])
-            else:
-                self.bSeries.append(False)
-        return self.bSeries
-        
-    def assignXYZ(self, x,y, atype):
-        """
-        given a list of masses, assigns ions from a sequence
-        """
-        start = len(x)
-        self.ySeries = []
-        seq = list(self.sequence)
-        seq.reverse()
-        seq = ''.join(seq)
-        if atype == 'x':
-            iseq = self.x
-        if atype == 'y':
-            iseq = self.y
-        if atype == 'z':
-            iseq = self.z
-        for seqindex,yi in enumerate(iseq):
-            candidates = []
-            seen = False
-            for index,m in enumerate(x[:start]):
-                if yi > m-self.tolerance and yi < m+self.tolerance:
-                    seen = True
-                    candidates.append((x[index],y[index],seq[seqindex], index))
-                elif yi > m+self.tolerance and seen:
-                    start=index
-                    break
-            if candidates:
-                candidates.sort(key=operator.itemgetter(1))
-                self.ySeries.append(candidates[0])
-            else:
-                self.ySeries.append(False)
-        return self.ySeries
 
 #some dangerous globals for us
 searchPaths = set([])
@@ -285,7 +180,7 @@ def loadFolder(path):
     for root,dir,files in os.walk(path):
         for fileName in files:
             if '.mgf' in fileName and '.mgfi' not in fileName:
-                fileNames[fileName[:findName.find('.mgf')]] = os.path.join(root,fileName)
+                fileNames[fileName[:fileName.find('.mgf')]] = os.path.join(root,fileName)
     searchPaths.add(path)
 
 def loadConfig():
@@ -353,6 +248,7 @@ class PeptidePanel(wx.Panel):
         wx.Panel.__init__(self, parent)
         self.parent = parent
         self.peptide = ""
+        self.pepParse = re.compile(r'([A-Z])(\d+)')
         self.ions = {}
         self.SetMaxSize((10000,100))
         self.SetMinSize((0,100))
@@ -366,6 +262,8 @@ class PeptidePanel(wx.Panel):
     def plotPeptide(self, pep, ions):
         self.SetSize((self.parent.GetSize()[0],100))
         self.peptide = pep
+        self.sLen = len(pep)
+        self.revTypes = set([])
         self.ions = ions
         self.Refresh()
         
@@ -378,30 +276,6 @@ class PeptidePanel(wx.Panel):
         h = dc.GetSize()[1]
         dc.SetBrush(wx.RED_BRUSH)
         tpos=0
-        try:
-            x = self.ions['x']
-        except KeyError:
-            x = []
-        try:
-            y = self.ions['y']
-        except KeyError:
-            y = []
-        try:
-            z = self.ions['z']
-        except KeyError:
-            z = []
-        try:
-            a = self.ions['a']
-        except KeyError:
-            a = []
-        try:
-            b = self.ions['b']
-        except KeyError:
-            b = []
-        try:
-            c = self.ions['c']
-        except KeyError:
-            c = []
         lx=0
         ly=0
         tw=0
@@ -436,9 +310,26 @@ class PeptidePanel(wx.Panel):
                 break
             fsize+=1
         totalw = len(self.peptide)*tw
-        
+        dc.SetFont(wx.Font(isize, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
+        ixw,ixh = dc.GetTextExtent('x')
+        iyw,iyh = dc.GetTextExtent('y')
+        izw,izh = dc.GetTextExtent('z')
+        iaw,iah = dc.GetTextExtent('a')
+        ibw,ibh = dc.GetTextExtent('b')
+        icw,ich = dc.GetTextExtent('c')
         cy = h/2
         lx = w/2-totalw/2
+        #for i,v in enumerate(self.peptide):
+        toDraw = {}
+        sLen = self.sLen
+        for entry in self.ions:
+            m = self.pepParse.search(entry[4])
+            fType = m.group(1)
+            index = int(m.group(2))
+            try:
+                toDraw[index].append(fType)
+            except KeyError:
+                toDraw[index] = [fType]
         for i,v in enumerate(self.peptide):
             dc.SetFont(wx.Font(fsize, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
             tw,th = dc.GetTextExtent(v)
@@ -446,57 +337,62 @@ class PeptidePanel(wx.Panel):
             dc.SetPen(wx.Pen((0,0,0)))
             dc.DrawText(v, lx-tw/2,cy-th/2)
             dc.SetFont(wx.Font(isize, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
-            ixw,ixh = dc.GetTextExtent('x')
-            iyw,iyh = dc.GetTextExtent('y')
-            izw,izh = dc.GetTextExtent('z')
-            iaw,iah = dc.GetTextExtent('a')
-            ibw,ibh = dc.GetTextExtent('b')
-            icw,ich = dc.GetTextExtent('c')
             dc.DrawLine(lx+tw/2,cy-th/2-ixh/2-iyh-izh,lx+tw/2,cy+th/2+iah+ibh+ich/2)
             dc.SetTextForeground((255,0,255))
-            ind = str(len(self.peptide)-i)
+            ind = str(sLen-i)
             iw,ih = dc.GetTextExtent(ind)
             dc.DrawText(ind, lx+tw/2,cy-th/2-ixh/2-iyh-izh-ih)
             dc.DrawText(str(i+1), lx+tw/2,cy+th/2+iah+ibh+ich/2)
-            if x and x[i]:
-                #we're x/y/z ions, we go in reverse
-                xy = cy-th/2-izh-iyh
-                dc.SetPen(wx.Pen((0,0,255)))
-                dc.DrawLine(lx+tw,xy,lx+tw/2,xy)
-                dc.SetTextForeground((0,0,255))
-                dc.DrawText("x", lx+tw,xy-ixh/2)
-            if y and y[i]:
-                #we're x/y/z ions, we go in reverse
-                yy = cy-th/2-ixh
-                dc.SetPen(wx.Pen((0,0,255)))
-                dc.DrawLine(lx+tw,yy,lx+tw/2,yy)
-                dc.SetTextForeground((0,0,255))
-                dc.DrawText("y", lx+tw,yy-iyh/2)
-            if z and z[i]:
-                #we're x/y/z ions, we go in reverse
-                zy = cy-th/2
-                dc.SetPen(wx.Pen((0,0,255)))
-                dc.DrawLine(lx+tw,zy,lx+tw/2,zy)
-                dc.SetTextForeground((0,0,255))
-                dc.DrawText("z", lx+tw,zy-izh/2)
-            if a and a[i]:
-                dc.SetPen(wx.Pen((255,0,0)))
-                ay = cy+th/2
-                dc.DrawLine(lx,ay,lx+tw/2,ay)
-                dc.SetTextForeground((255,0,0))
-                dc.DrawText("a", lx-iw,ay-iah/2)
-            if b and b[i]:
-                by = cy+th/2+iah
-                dc.SetPen(wx.Pen((255,0,0)))
-                dc.DrawLine(lx,by,lx+tw/2,by)
-                dc.SetTextForeground((255,0,0))
-                dc.DrawText("b", lx-iw,by-ibh/2)
-            if c and c[i]:
-                cy2 = cy+th/2+iah+ibh
-                dc.SetPen(wx.Pen((255,0,0)))
-                dc.DrawLine(lx,cy2,lx+tw/2,cy2)
-                dc.SetTextForeground((255,0,0))
-                dc.DrawText("c", lx-iw,cy2-ich/2)
+            try:
+                todraw = toDraw[i+1]
+                for fragType in todraw:
+                    if fragType == 'A':
+                        dc.SetPen(wx.Pen((255,0,0)))
+                        ay = cy+th/2
+                        dc.DrawLine(lx,ay,lx+tw/2,ay)
+                        dc.SetTextForeground((255,0,0))
+                        dc.DrawText("a", lx-iw,ay-iah/2)
+                    elif fragType == 'B':
+                        by = cy+th/2+iah
+                        dc.SetPen(wx.Pen((255,0,0)))
+                        dc.DrawLine(lx,by,lx+tw/2,by)
+                        dc.SetTextForeground((255,0,0))
+                        dc.DrawText("b", lx-iw,by-ibh/2)
+                    elif fragType == 'C':
+                        cy2 = cy+th/2+iah+ibh
+                        dc.SetPen(wx.Pen((255,0,0)))
+                        dc.DrawLine(lx,cy2,lx+tw/2,cy2)
+                        dc.SetTextForeground((255,0,0))
+                        dc.DrawText("c", lx-iw,cy2-ich/2)
+            except KeyError:
+                pass
+            try:
+                todraw = toDraw[sLen-i]
+                for fragType in todraw:
+                    if fragType == 'X':
+                        #we're x/y/z ions, we go in reverse
+                        xy = cy-th/2-izh-iyh
+                        dc.SetPen(wx.Pen((0,0,255)))
+                        dc.DrawLine(lx+tw,xy,lx+tw/2,xy)
+                        dc.SetTextForeground((0,0,255))
+                        dc.DrawText("x", lx+tw,xy-ixh/2)
+                    elif fragType == 'Y':
+                        #we're x/y/z ions, we go in reverse
+                        yy = cy-th/2-ixh
+                        dc.SetPen(wx.Pen((0,0,255)))
+                        dc.DrawLine(lx+tw,yy,lx+tw/2,yy)
+                        dc.SetTextForeground((0,0,255))
+                        dc.DrawText("y", lx+tw,yy-iyh/2)
+                    elif fragType == 'Z':
+                        #we're x/y/z ions, we go in reverse
+                        zy = cy-th/2
+                        dc.SetPen(wx.Pen((0,0,255)))
+                        dc.DrawLine(lx+tw,zy,lx+tw/2,zy)
+                        dc.SetTextForeground((0,0,255))
+                        dc.DrawText("z", lx+tw,zy-izh/2)
+                    
+            except KeyError:
+                pass
             lx+=tw+5
         dc.EndDrawing()
         
@@ -612,7 +508,7 @@ class ViewerPanel(wx.SplitterWindow):
                 y.append(float(i[1]))
 #            y = np.array(y)/np.max(y)*100
             self.pepSequence = gob.getAttribute('Sequence')
-            a = figureIons(self.pepSequence,gob.getAttribute('Charge'),mods, self.getTolerance())
+            a = figureIons.figureIons(self.pepSequence,gob.getAttribute('Charge'),mods, self.getTolerance())
             self.draw.cleanup()
             self.draw.setTitle(title)
             self.plotIons(x,y,a)
@@ -632,7 +528,7 @@ class ViewerPanel(wx.SplitterWindow):
                 y.append(float(i[1]))
 #            y = np.array(y)/np.max(y)*100
             self.pepSequence = scan.getPeptide()
-            a = figureIons(self.pepSequence,1,mods, self.getTolerance())#for some reason x!Tandem treats everything as a single charge
+            a = figureIons.figureIons(self.pepSequence,scan.getCharge(),mods, self.getTolerance())
             self.draw.cleanup()
             self.draw.setTitle(title)
             self.plotIons(x,y,a)
@@ -657,25 +553,8 @@ class ViewerPanel(wx.SplitterWindow):
             self.draw.plotXY(x,y)
         
     def plotIons(self, x,y,a):
-        ionList = {}
-        if self.draw.ionView['x']:
-            ionList['x'] = a.assignXYZ(x,y,'x')
-            self.draw.plotIons(ionList['x'], 'x')
-        if self.draw.ionView['y']:
-            ionList['y'] = a.assignXYZ(x,y,'y')
-            self.draw.plotIons(ionList['y'], 'y')
-        if self.draw.ionView['z']:
-            ionList['z'] = a.assignXYZ(x,y,'z')
-            self.draw.plotIons(ionList['z'], 'z')
-        if self.draw.ionView['a']:
-            ionList['a'] = a.assignABC(x,y,'a')
-            self.draw.plotIons(ionList['a'], 'a')
-        if self.draw.ionView['b']:
-            ionList['b'] = a.assignABC(x,y,'b')
-            self.draw.plotIons(ionList['b'], 'b')
-        if self.draw.ionView['c']:
-            ionList['c'] = a.assignABC(x,y,'c')
-            self.draw.plotIons(ionList['c'], 'c')
+        ionList = a.assignPeaks(x,y)
+        self.draw.plotIons(ionList)
         self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)        
                
 class PlotPanel(wx.Panel):
@@ -837,7 +716,24 @@ class DrawFrame(PlotPanel):
     def testFlag(self, flag):
         return self.flag & self.flags[flag]
     
-    def plotIons(self, ions, ionType):
+    def plotIons(self, peaks):
+        itypes = {'x':[],
+                  'y':[],
+                  'z':[],
+                  'a':[],
+                  'b':[],
+                  'c':[]
+                  }
+        for i in peaks:
+            if not i:
+                continue
+            mz,inten,aa,itype,desc = i
+            if self.ionView[itype[0].lower()]:
+                self.points.append((mz,inten,aa,itype,desc))
+        self.draw()
+            
+    
+    def _plotIons(self, ions, ionType):
         x = []
         y = []
         aas = []
@@ -860,7 +756,6 @@ class DrawFrame(PlotPanel):
         self.points.append(([x,y],ionType))
         self.colors.append([1.0,0.0,0.0])
         txt = []
-#        print 'adding text'
         for x,y,aa,ind in zip(x,y,aas,nums):
             if not aa:
                 continue
@@ -877,8 +772,8 @@ class DrawFrame(PlotPanel):
 #        self.Canvas.ClearAll()
         self.x = xco
         self.y = yco
-        self.points.append(([xco,yco],'spectra'))
-        self.colors.append([0.0,0.0,0.0])
+        for x,y in zip(xco,yco):
+            self.points.append((x,y,'','spectra',''))
         self.draw()
 
     def cleanup(self):
@@ -906,30 +801,30 @@ class DrawFrame(PlotPanel):
         xmax = 10
         ymax = 10
         self.hitMapX = {}
+        blues = set(('x','y','z'))
         for i,pt_list in enumerate(self.points):
-            plot_pts = np.array( pt_list[0] )
-            pType = pt_list[1]
-            xm = np.max(plot_pts[0,:])
-            if (xm > xmax):
-                xmax = xm
-            ym = np.max(plot_pts[1,:])
-            if (ym > ymax):
-                ymax = ym
-            for xco,yco in zip(plot_pts[0,:],plot_pts[1,:]):
-                try:
-                    self.hitMapX[xco].add(yco)
-                except KeyError:
-                    self.hitMapX[xco] = set([yco])
-            for barEntry in self.subplot.bar( plot_pts[0,:], plot_pts[1,:], color=self.colors[i],align='center'):
-#                barEntry.set_linewidth(0)
-                barEntry.set_edgecolor(self.colors[i])
-                if pType == 'spectra':
-                    barEntry.set_zorder(0)
-                else:
-                    barEntry.set_zorder(1)
-        for i in self.text:
-            for x,y,text,c in i:
-                self.subplot.text(x,y,text,color=c)
+            x,y,aa,fragtype,desc = pt_list
+            if fragtype in blues:
+                col=[0.0,0.0,1.0]
+                tcolor='b'
+            elif fragtype == 'spectra':
+                col=[0.0,0.0,0.0] 
+            else:
+                col=[1.0,0.0,0.0]
+                tcolor='r'
+            if (x > xmax):
+                xmax = x
+            if (y > ymax):
+                ymax = y
+            try:
+                self.hitMapX[x].add((y,desc))
+            except KeyError:
+                self.hitMapX[x] = set([(y,desc)])
+            bar = self.subplot.bar(x,y,color=col,align='center')
+            if fragtype == 'spectra':
+                bar[0].set_zorder(0)
+            else:
+                self.subplot.text(x,y+5*len(self.hitMapX[x]),desc,color=tcolor)
         self.subplot.axes.set_xbound(lower=0, upper=xmax+10)
         self.subplot.axes.set_ybound(lower=0, upper=ymax+20)
         self.canvas.draw()
@@ -942,17 +837,20 @@ class DrawFrame(PlotPanel):
         txt = ""
         hList = []
         for i in self.hitMapX:
-            if x-1 < i < x+1:
+            if x-3 < i < x+3:
                 yco = self.hitMapX[i]
                 for j in yco:
-                    if y<=j:
-                        hList.append((i-x,i,j))
+                    if y<=j[0]:
+                        hList.append((abs(i-x),i,j))
         if self.annotate:
-            self.subplot.axes.texts.remove(self.annotate)
+            try:
+                self.subplot.axes.texts.remove(self.annotate)
+            except ValueError:
+                pass
             self.annotate = None
         if hList:
             sorted(hList,key=operator.itemgetter(0))
-            txt+='m/z = %0.3f (Int: %0.3f)\n'%(hList[0][1],hList[0][2])
+            txt+='%s m/z = %0.3f (Int: %0.3f)\n'%(hList[0][2][1],hList[0][1],hList[0][2][0])
             self.annotate = self.subplot.axes.annotate(txt,
             (x,y), xytext=(-2*20, 5), textcoords='offset points',
             bbox=self.bbox, arrowprops=self.arrowprops)
@@ -961,7 +859,7 @@ class DrawFrame(PlotPanel):
 
 app = wx.App(False)
 frame = MainFrame()
-#frame.addPage('A1.2012_06_07_12_20_00.t.xml')
+frame.addPage('A1.2012_06_07_12_20_00.t.xml')
 #import wx.lib.inspection
 #wx.lib.inspection.InspectionTool().Show()
 app.MainLoop()
