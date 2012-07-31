@@ -330,10 +330,12 @@ class PeptidePanel(wx.Panel):
             dc.SetTextForeground((0,0,0))
             dc.SetPen(wx.Pen((0,0,0)))
             dc.DrawText(v, lx-tw/2,cy-th/2)
+            if i==sLen-1:
+                break
             dc.SetFont(wx.Font(isize, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL,wx.FONTWEIGHT_NORMAL))
             dc.DrawLine(lx+tw/2,cy-th/2-ixh/2-iyh-izh,lx+tw/2,cy+th/2+iah+ibh+ich/2)
             dc.SetTextForeground((255,0,255))
-            ind = str(sLen-i)
+            ind = str(sLen-i-1)
             iw,ih = dc.GetTextExtent(ind)
             dc.DrawText(ind, lx+tw/2,cy-th/2-ixh/2-iyh-izh-ih)
             dc.DrawText(str(i+1), lx+tw/2,cy+th/2+iah+ibh+ich/2)
@@ -361,7 +363,7 @@ class PeptidePanel(wx.Panel):
             except KeyError:
                 pass
             try:
-                todraw = toDraw[sLen-i]
+                todraw = toDraw[int(ind)]
                 for fragType in todraw:
                     if fragType == 'X':
                         #we're x/y/z ions, we go in reverse
@@ -820,6 +822,8 @@ class DrawFrame(PlotPanel):
             if fragtype == 'spectra':
                 bar[0].set_zorder(0)
             else:
+                if not desc:
+                    continue
                 desc = desc.split('|')
                 hlen=len(self.hitMapX[x])*5
                 if len(desc) == 3:
