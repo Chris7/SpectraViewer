@@ -45,22 +45,22 @@ class figureIons(object):
                     tcharge = icharge
                     if 0<i<sLen-1 and not lossType[2]:
                         a = (mass-masses.mod_weights['cho'][0]+hw+hw*tcharge)/tcharge
-                        self.peakTable.append((a,'A%d'%tcharge,'A%d+%d'%(ionIndex,tcharge),v))
+                        self.peakTable.append((a,'A%d'%tcharge,'A%d|%d+'%(ionIndex,tcharge),v))
                     elif 0<i<sLen-1 and 'A' in lossType[1]:
                         a = (mass-masses.mod_weights['cho'][0]+hw+hw*tcharge+lossMass)/tcharge
-                        self.peakTable.append((a,'A%d'%tcharge,'A%d%s+%d'%(ionIndex,lossType[2],tcharge),v))
+                        self.peakTable.append((a,'A%d'%tcharge,'A%d|%s|%d+'%(ionIndex,lossType[2],tcharge),v))
                     if 0<i<sLen-1 and not lossType[2]:
                         b = (mass+masses.mod_weights['h'][0]-hw+hw*tcharge)/tcharge
-                        self.peakTable.append((b,'B%d'%tcharge,'B%d+%d'%(ionIndex,tcharge),v))
+                        self.peakTable.append((b,'B%d'%tcharge,'B%d|%d+'%(ionIndex,tcharge),v))
                     elif 0<i<sLen-1 and 'B' in lossType[1]:
                         b = (mass+masses.mod_weights['h'][0]-hw+hw*tcharge+lossMass)/tcharge
-                        self.peakTable.append((b,'B%d'%tcharge,'B%d%s+%d'%(ionIndex,lossType[2],tcharge),v))
+                        self.peakTable.append((b,'B%d'%tcharge,'B%d|%s|%d+'%(ionIndex,lossType[2],tcharge),v))
                     if i<sLen-1 and not lossType[2]:
                         c = (mass+masses.mod_weights['nh2'][0]+hw+hw*tcharge)/tcharge
-                        self.peakTable.append((c,'C%d'%tcharge,'C%d+%d'%(ionIndex,tcharge),v))
+                        self.peakTable.append((c,'C%d'%tcharge,'C%d|%d+'%(ionIndex,tcharge),v))
                     elif i<sLen-1 and 'C' in lossType[1]:
                         c = (mass+masses.mod_weights['nh2'][0]+hw+hw*tcharge+lossMass)/tcharge
-                        self.peakTable.append((c,'C%d'%tcharge,'C%d%s+%d'%(ionIndex,lossType[2],tcharge),v))
+                        self.peakTable.append((c,'C%d'%tcharge,'C%d|%s|%d+'%(ionIndex,lossType[2],tcharge),v))
         charge=int(self.ioncharge)-1#for rightmost charge -- we remove the NH3 charge
         losses = [(0,('A','B','C','X','Y','Z'),'')]
         mass = 0
@@ -89,22 +89,22 @@ class figureIons(object):
                     #tcharge = icharge+1
                     if not lossType[2]:
                         x = (mass+masses.mod_weights['co'][0]+masses.mod_weights['oh'][0]-hw+hw*tcharge)/tcharge
-                        self.peakTable.append((x,'X%d'%tcharge,'X%d+%d'%(ionIndex,tcharge),v))
+                        self.peakTable.append((x,'X%d'%tcharge,'X%d|%d+'%(ionIndex,tcharge),v))
                     elif 'X' in lossType[1]:
                         x = (mass+masses.mod_weights['co'][0]+masses.mod_weights['oh'][0]-hw+hw*tcharge+lossMass)/tcharge
-                        self.peakTable.append((x,'X%d'%tcharge,'X%d%s+%d'%(ionIndex,lossType[2],tcharge),v))
+                        self.peakTable.append((x,'X%d'%tcharge,'X%d|%s|%d+'%(ionIndex,lossType[2],tcharge),v))
                     if not lossType[2]:
                         y = (mass+masses.mod_weights['h'][0]+masses.mod_weights['oh'][0]+hw*tcharge)/tcharge
-                        self.peakTable.append((y,'Y%d'%tcharge,'Y%d+%d'%(ionIndex,tcharge),v))
+                        self.peakTable.append((y,'Y%d'%tcharge,'Y%d|%d+'%(ionIndex,tcharge),v))
                     elif 'Y' in lossType[1]:
                         y = (mass+masses.mod_weights['h'][0]+masses.mod_weights['oh'][0]+hw*tcharge+lossMass)/tcharge
-                        self.peakTable.append((y,'Y%d'%tcharge,'Y%d%s+%d'%(ionIndex,lossType[2],tcharge),v))
+                        self.peakTable.append((y,'Y%d'%tcharge,'Y%d|%s|%d+'%(ionIndex,lossType[2],tcharge),v))
                     if not lossType[2]:
                         z = (mass-masses.mod_weights['nh2'][0]+masses.mod_weights['oh'][0]+hw+hw*tcharge)/tcharge
-                        self.peakTable.append((z,'Z%d'%tcharge,'Z%d+%d'%(ionIndex,tcharge),v))
+                        self.peakTable.append((z,'Z%d'%tcharge,'Z%d|%d+'%(ionIndex,tcharge),v))
                     elif 'Z' in lossType[1]:
                         z = (mass-masses.mod_weights['nh2'][0]+masses.mod_weights['oh'][0]+hw+hw*tcharge+lossMass)/tcharge
-                        self.peakTable.append((z,'Z%d'%tcharge,'Z%d%s+%d'%(ionIndex,lossType[2],tcharge),v))
+                        self.peakTable.append((z,'Z%d'%tcharge,'Z%d|%s|%d+'%(ionIndex,lossType[2],tcharge),v))
                     
                     
 #                    self.peakTable.append((y,'Y%d'%icharge,'Y%d%s+%d'%((sLen-i),lossType[2],icharge+1)))

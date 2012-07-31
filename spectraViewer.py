@@ -1,6 +1,39 @@
 import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, matplotlib as mpl, figureIons
-
 import numpy as np
+
+#some dangerous globals for us
+searchPaths = set([])
+fileNames = {}
+titleParse = re.compile('(.+?)\.\d+\.\d+\.\d+|\w+')
+
+def loadFolder(path):
+    global searchPaths,fileNames
+    for root,dir,files in os.walk(path):
+        for fileName in files:
+            if '.mgf' in fileName and '.mgfi' not in fileName:
+                fileNames[fileName[:fileName.find('.mgf')]] = os.path.join(root,fileName)
+    searchPaths.add(path)
+
+def loadConfig():
+    global searchPaths
+    config = ConfigParser.RawConfigParser()
+    config.read('spectra.cfg')
+    try:
+        paths = config.get('File Paths', 'pathList')
+    except ConfigParser.NoSectionError:
+        return
+    searchPaths = set(paths.split(','))
+    for i in searchPaths:
+        loadFolder(i)
+    
+def saveConfig():
+    global searchPaths
+    config = ConfigParser.RawConfigParser()
+    config.add_section('File Paths')
+    paths = ','.join(searchPaths)
+    config.set('File Paths', 'pathList', paths)
+    with open('spectra.cfg', 'wb') as configfile:
+        config.write(configfile)
 
 # Define File Drop Target class
 #from http://wiki.wxpython.org/DragAndDrop
@@ -166,43 +199,6 @@ class ViewerGrid(MegaGrid.MegaGrid):
         title = self._table.GetValue(row, 0)
         self.parent.parent.loadScan(title)
         return
-        
-
-
-
-#some dangerous globals for us
-searchPaths = set([])
-fileNames = {}
-titleParse = re.compile('(.+?)\.\d+\.\d+\.\d+|\w+')
-
-def loadFolder(path):
-    global searchPaths,fileNames
-    for root,dir,files in os.walk(path):
-        for fileName in files:
-            if '.mgf' in fileName and '.mgfi' not in fileName:
-                fileNames[fileName[:fileName.find('.mgf')]] = os.path.join(root,fileName)
-    searchPaths.add(path)
-
-def loadConfig():
-    global searchPaths
-    config = ConfigParser.RawConfigParser()
-    config.read('spectra.cfg')
-    try:
-        paths = config.get('File Paths', 'pathList')
-    except ConfigParser.NoSectionError:
-        return
-    searchPaths = set(paths.split(','))
-    for i in searchPaths:
-        loadFolder(i)
-    
-def saveConfig():
-    global searchPaths
-    config = ConfigParser.RawConfigParser()
-    config.add_section('File Paths')
-    paths = ','.join(searchPaths)
-    config.set('File Paths', 'pathList', paths)
-    with open('spectra.cfg', 'wb') as configfile:
-        config.write(configfile) 
 
 class MainFrame(wx.Frame):
     def __init__(self):
@@ -248,7 +244,6 @@ class PeptidePanel(wx.Panel):
         wx.Panel.__init__(self, parent)
         self.parent = parent
         self.peptide = ""
-        self.pepParse = re.compile(r'([A-Z])(\d+)')
         self.ions = {}
         self.SetMaxSize((10000,100))
         self.SetMinSize((0,100))
@@ -319,13 +314,12 @@ class PeptidePanel(wx.Panel):
         icw,ich = dc.GetTextExtent('c')
         cy = h/2
         lx = w/2-totalw/2
-        #for i,v in enumerate(self.peptide):
         toDraw = {}
         sLen = self.sLen
         for entry in self.ions:
-            m = self.pepParse.search(entry[4])
-            fType = m.group(1)
-            index = int(m.group(2))
+            m = entry[4].split('|')
+            fType = m[0][0]
+            index = int(m[0][1:])
             try:
                 toDraw[index].append(fType)
             except KeyError:
@@ -804,10 +798,12 @@ class DrawFrame(PlotPanel):
         blues = set(('x','y','z'))
         for i,pt_list in enumerate(self.points):
             x,y,aa,fragtype,desc = pt_list
+            fragtype = fragtype[0].lower()
             if fragtype in blues:
                 col=[0.0,0.0,1.0]
                 tcolor='b'
             elif fragtype == 'spectra':
+                t='k'
                 col=[0.0,0.0,0.0] 
             else:
                 col=[1.0,0.0,0.0]
@@ -817,14 +813,20 @@ class DrawFrame(PlotPanel):
             if (y > ymax):
                 ymax = y
             try:
-                self.hitMapX[x].add((y,desc))
+                self.hitMapX[x].add((y,desc.replace('|',' ')))
             except KeyError:
-                self.hitMapX[x] = set([(y,desc)])
+                self.hitMapX[x] = set([(y,desc.replace('|', ' '))])
             bar = self.subplot.bar(x,y,color=col,align='center')
             if fragtype == 'spectra':
                 bar[0].set_zorder(0)
             else:
-                self.subplot.text(x,y+5*len(self.hitMapX[x]),desc,color=tcolor)
+                desc = desc.split('|')
+                hlen=len(self.hitMapX[x])*5
+                if len(desc) == 3:
+                    txt = '$\mathtt{%s^{%s^{%s+}}}$'%(desc[0].lower(),desc[1],desc[2][:-1])
+                else:
+                    txt = '$\mathtt{%s^{%s+}}$'%(desc[0].lower(),desc[1][:-1])
+                self.subplot.text(x,y+hlen,txt,color=tcolor)
         self.subplot.axes.set_xbound(lower=0, upper=xmax+10)
         self.subplot.axes.set_ybound(lower=0, upper=ymax+20)
         self.canvas.draw()
