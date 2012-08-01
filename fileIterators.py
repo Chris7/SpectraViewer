@@ -4,6 +4,10 @@ try:
 except ImportError:
     print 'lxml is required to parse X!tandem xml files due to the namespaces employed'
 
+#regex for common use
+scanSplitter = re.compile(r'[\t\s]')
+distillerParse = re.compile(r'_DISTILLER_RAWFILE\[(\d+)\]=\(1\)(.+)')
+
 class scanObject(object):
     """
     A scan object to store peaklist information in
@@ -22,9 +26,9 @@ class scanObject(object):
         self.mass = mass
         
     def addScan(self, scan):
-        s = scan.split(' ')
+        s = scanSplitter.split(scan)
         if len(s) > 1 and float(s[1]) != 0.0:
-            self.scans.append(scan)
+            self.scans.append((float(s[0]),float(s[1])))
         
     def getInfo(self):
         return self.scans
@@ -45,10 +49,7 @@ class scanObject(object):
             return None
         
     def getMZ(self):
-        out = []
-        for i in self.scans:
-            out.append(i.split(' '))
-        return out
+        return self.scans
     
     def getPrecursor(self):
         return self.mass
@@ -213,12 +214,12 @@ class GFFObject(object):
         found=False
         if len(filters):
             for i in filters:
-                if info.find(i) != -1:
+                if i in info:
                     found=True
         else:
             found=True
         for i in exclude:
-            if info.find(i) != -1:
+            if i in info:
                 found=False
         if not found:
             return None
@@ -508,6 +509,7 @@ class mgfIterator(object):
         tFile.reverse()
         indexFile=''.join(tFile)+'.mgfi'
         self.rand = True
+        self.titleMap = {}
         self.ra = {}
         if isinstance(filename,(str,unicode)):
             self.f = open(filename, 'rb')
@@ -572,9 +574,13 @@ class mgfIterator(object):
                     scanObj.addCharge(entry[1])
                     foundCharge = True
                 elif entry[0] == 'TITLE':
-                    title = entry[1]
+#                    if self.titleMap:
+#                        pos = entry[1].find(',')
+#                        title = self.titleMap[int(entry[1][:entry[1].find(',')])]
+#                    else:
+                    title = '='.join(entry[1:])
                     foundTitle = True
-                    scanObj.addTitle(entry[1])
+                    scanObj.addTitle(title)
                 elif entry[0] == 'RTINSECONDS':
                     scanObj.addRT(entry[1])
             else:
@@ -593,14 +599,18 @@ class mgfIterator(object):
         setupScan = False
         scanInfo = ""
         while row:
-            if row.find('_DISTILLER') != -1:
-                raise StopIteration
-            elif row.find('BEGIN IONS') != -1:
+            if '_DISTILLER' in row:
+                if row:
+                    m = distillerParse.match(row)
+                    if m:
+                        self.titleMap[int(m.group(1))+1] = m.group(2)
+                pass
+            elif 'BEGIN IONS' in row:
                 if self.rand:
                     pStart=self.f.tell()
                 setupScan=True
 #                newScan=True
-            elif row.find('END IONS') != -1:
+            elif 'END IONS' in row:
                 #scanObj.writeScan(open('/home/chris/test.mgf', 'wb'))
                 scan = self.parseScan(scanInfo)
                 if scan:
@@ -635,8 +645,7 @@ class mgfParser(object):
         dparse = re.compile(r'_DISTILLER_RAWFILE\[(\d+)\]=.+\\(.+)')
         tparse = re.compile(r'TITLE=(\d+),(\d+): Scan (\d+) \(rt=(.+)\)')
         for row in self.f:
-            if row.find('_DISTILLER') != -1:
-                return None
+            if '_DISTILLER' in row:
                 distiller=True
                 m = dparse.match(row)
                 if m:
@@ -647,11 +656,11 @@ class mgfParser(object):
                     dmap[m.group(1)] = fname
                 else:
                     continue
-            elif row.find('BEGIN IONS') != -1:
+            elif 'BEGIN IONS' in row:
                 scanObj = scanObject()
                 setupScan=True
                 newScan=True
-            elif row.find('END IONS') != -1:
+            elif 'END IONS' in row:
                 self.scans[title] = scanObj
 #                scanObj.writeScan(open('/home/chris/test.mgf', 'wb'))
                 newScan = False
@@ -690,7 +699,11 @@ class mgfParser(object):
         except KeyError:
             return None
         
-#f = mgfIterator('/home/chris/cluster/common/src/parallel_tandem_10-12-01-1/bin/NaiveCD4/11BR4_GELFREE-PAGE_AP/Naive_CD4_GelfrEE_B41.mgf')
+#f = mgfIterator('/home/chris/cluster/common/src/parallel_tandem_10-12-01-1/bin/Human Proteome/Adrenal_D1.mgf')
+#for row in f:
+#    print 'info',row.getInfo()
+#    print 'charge',row.getCharge()
+#    print 'rt',row.getRT()
 ##    print scan.getTitle()
 #f.getScan('Naive_CD4_GelfrEE_B41.548.548.2')
 ##    print i.getTitle()
