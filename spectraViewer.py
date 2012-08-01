@@ -817,9 +817,9 @@ class DrawFrame(PlotPanel):
                     continue
                 hlen=len(self.hitMapX[x])*5
                 if loss:
-                    txt = '$\mathtt{%s^{%s^{%d+}}}$'%(fragType,loss,fragNum)
+                    txt = '$\mathtt{%s%d^{%s^{%s}}}$'%(fragType,fragNum,loss,''.join(['+' for i in xrange(charge)]))
                 else:
-                    txt = '$\mathtt{%s^{%d+}}$'%(fragType,fragNum)
+                    txt = '$\mathtt{%s%d^{%s}}$'%(fragType,fragNum,''.join(['+' for i in xrange(charge)]))
                 self.subplot.text(x,y+hlen,txt,color=tcolor)
         self.subplot.axes.set_xbound(lower=0, upper=xmax+10)
         self.subplot.axes.set_ybound(lower=0, upper=ymax+20)
