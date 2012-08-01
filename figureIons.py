@@ -22,7 +22,7 @@ class figureIons(object):
         mass = 0
         self.peakTable = []
         modList = self.modList
-#        ioncharge = self.ioncharge
+        maxcharge = int(self.ioncharge)-1
         hw = masses.mod_weights['h'][0]
         losses = [(0,('a','b','c','x','y','z'),'')]
         lossMasses = masses.lossMasses
@@ -43,6 +43,8 @@ class figureIons(object):
                 charge+=masses.mod_weights[modList[i+1]][1]
             except KeyError:
                 pass
+            if charge>maxcharge:
+                charge=maxcharge
             for icharge in xrange(1,charge+1):
                 for lossType in losses:
                     lossMass = lossType[0]
@@ -78,6 +80,8 @@ class figureIons(object):
             except KeyError:
                 pass
             ionIndex = i+1
+            if charge>maxcharge:
+                charge=maxcharge
             #we need to look one ahead
             try:
                 if v in lossMasses:

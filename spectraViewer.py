@@ -98,27 +98,32 @@ class ViewerGrid(MegaGrid.MegaGrid):
         id1 = wx.NewId()
         sortID = wx.NewId()
         groupID = wx.NewId()
-
         xo, yo = evt.GetPosition()
-        self.SelectCol(col)
-        cols = self.GetSelectedCols()
         self.Refresh()
-        menu.Append(sortID, "Sort Column (disabled after grouping)")
-        menu.Append(groupID, "Group By Column")
-
-        def sort(event, self=self, col=col):
-            self.SortColumn(col, False)
-            self.Reset()
+        if not self.groupBy:
+            menu.Append(sortID, "Sort Column (disabled after grouping)")
+            def sort(event, self=self, col=col):
+                self.SortColumn(col, False)
+                self.newGroup = False
+                self.groupBy = None
+                self.Reset()
+            self.Bind(wx.EVT_MENU, sort, id=sortID)
+        else:
+            menu.Append(sortID, "Ungroup")
+            def ungroup(event, self=self, col=col):
+                self.groupBy = None
+                self.newGroup = False
+                self.ungroup()
+            self.Bind(wx.EVT_MENU, ungroup, id=sortID)
             
+            
+        menu.Append(groupID, "Group By Column")
         def group(event, self=self, col=col):
             self.groupBy=col
             self.newGroup = True
             self.regroup()
 
         self.Bind(wx.EVT_MENU, group, id=groupID)
-
-        if len(cols) == 1:
-            self.Bind(wx.EVT_MENU, sort, id=sortID)
 
         self.PopupMenu(menu)
         menu.Destroy()
@@ -147,7 +152,17 @@ class ViewerGrid(MegaGrid.MegaGrid):
         elif not self.groupBy:
             self._table.data = []
             for row in _data:
-                self._table.data.append(row)
+                self._table.data.append(row[1])
+    
+    def ungroup(self):
+        for i in self.dataSet:
+            if isinstance(self.dataSet[i][0][0],int):
+                continue
+            rid = int(self.dataSet[i][0][0][:-3])
+            self._table.SetRowLabel(rid,rid)
+            for j in self.dataSet[i][1:]:
+                self.setRowSize(j[0],20)
+        self.Reset()
     
     def regroup(self):
         #have we grouped already?
@@ -830,7 +845,6 @@ class DrawFrame(PlotPanel):
             return
         inv = self.subplot.axes.transData.inverted()
         x,y = inv.transform((event.x,event.y))
-        txt = ""
         hList = []
         for i in self.hitMapX:
             if x-3 < i < x+3:
@@ -844,9 +858,10 @@ class DrawFrame(PlotPanel):
             except ValueError:
                 pass
             self.annotate = None
+        txt = ""
         if hList:
             sorted(hList,key=operator.itemgetter(0))
-            txt+='%s m/z = %0.3f (Int: %0.3f)\n'%(hList[0][2][1],hList[0][1],hList[0][2][0])
+            txt+='m/z = %0.3f (Int: %0.3f)\n'%(hList[0][1],hList[0][2][0])
             self.annotate = self.subplot.axes.annotate(txt,
             (x,y), xytext=(-2*20, 5), textcoords='offset points',
             bbox=self.bbox, arrowprops=self.arrowprops)
