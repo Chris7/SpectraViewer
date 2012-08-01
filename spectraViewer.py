@@ -317,9 +317,8 @@ class PeptidePanel(wx.Panel):
         toDraw = {}
         sLen = self.sLen
         for entry in self.ions:
-            m = entry[4].split('|')
-            fType = m[0][0]
-            index = int(m[0][1:])
+            fType = entry[2]
+            index = entry[3]
             try:
                 toDraw[index].append(fType)
             except KeyError:
@@ -342,19 +341,19 @@ class PeptidePanel(wx.Panel):
             try:
                 todraw = toDraw[i+1]
                 for fragType in todraw:
-                    if fragType == 'A':
+                    if fragType == 'a':
                         dc.SetPen(wx.Pen((255,0,0)))
                         ay = cy+th/2
                         dc.DrawLine(lx,ay,lx+tw/2,ay)
                         dc.SetTextForeground((255,0,0))
                         dc.DrawText("a", lx-iw,ay-iah/2)
-                    elif fragType == 'B':
+                    elif fragType == 'b':
                         by = cy+th/2+iah
                         dc.SetPen(wx.Pen((255,0,0)))
                         dc.DrawLine(lx,by,lx+tw/2,by)
                         dc.SetTextForeground((255,0,0))
                         dc.DrawText("b", lx-iw,by-ibh/2)
-                    elif fragType == 'C':
+                    elif fragType == 'c':
                         cy2 = cy+th/2+iah+ibh
                         dc.SetPen(wx.Pen((255,0,0)))
                         dc.DrawLine(lx,cy2,lx+tw/2,cy2)
@@ -365,21 +364,21 @@ class PeptidePanel(wx.Panel):
             try:
                 todraw = toDraw[int(ind)]
                 for fragType in todraw:
-                    if fragType == 'X':
+                    if fragType == 'x':
                         #we're x/y/z ions, we go in reverse
                         xy = cy-th/2-izh-iyh
                         dc.SetPen(wx.Pen((0,0,255)))
                         dc.DrawLine(lx+tw,xy,lx+tw/2,xy)
                         dc.SetTextForeground((0,0,255))
                         dc.DrawText("x", lx+tw,xy-ixh/2)
-                    elif fragType == 'Y':
+                    elif fragType == 'y':
                         #we're x/y/z ions, we go in reverse
                         yy = cy-th/2-ixh
                         dc.SetPen(wx.Pen((0,0,255)))
                         dc.DrawLine(lx+tw,yy,lx+tw/2,yy)
                         dc.SetTextForeground((0,0,255))
                         dc.DrawText("y", lx+tw,yy-iyh/2)
-                    elif fragType == 'Z':
+                    elif fragType == 'z':
                         #we're x/y/z ions, we go in reverse
                         zy = cy-th/2
                         dc.SetPen(wx.Pen((0,0,255)))
@@ -713,19 +712,12 @@ class DrawFrame(PlotPanel):
         return self.flag & self.flags[flag]
     
     def plotIons(self, peaks):
-        itypes = {'x':[],
-                  'y':[],
-                  'z':[],
-                  'a':[],
-                  'b':[],
-                  'c':[]
-                  }
         for i in peaks:
             if not i:
                 continue
-            mz,inten,aa,itype,desc = i
-            if self.ionView[itype[0].lower()]:
-                self.points.append((mz,inten,aa,itype,desc))
+            mz,inten,fragType, fragNum,charge,loss,aa = i
+            if self.ionView[fragType]:
+                self.points.append((mz,inten,fragType, fragNum,charge,loss,aa))
         self.draw()
             
     
@@ -769,7 +761,7 @@ class DrawFrame(PlotPanel):
         self.x = xco
         self.y = yco
         for x,y in zip(xco,yco):
-            self.points.append((x,y,'','spectra',''))
+            self.points.append((x,y,'spectra', None,None,None,None))
         self.draw()
 
     def cleanup(self):
@@ -799,12 +791,11 @@ class DrawFrame(PlotPanel):
         self.hitMapX = {}
         blues = set(('x','y','z'))
         for i,pt_list in enumerate(self.points):
-            x,y,aa,fragtype,desc = pt_list
-            fragtype = fragtype[0].lower()
-            if fragtype in blues:
+            x,y,fragType, fragNum,charge,loss,aa = pt_list
+            if fragType in blues:
                 col=[0.0,0.0,1.0]
                 tcolor='b'
-            elif fragtype == 'spectra':
+            elif fragType == 'spectra':
                 t='k'
                 col=[0.0,0.0,0.0] 
             else:
@@ -815,21 +806,20 @@ class DrawFrame(PlotPanel):
             if (y > ymax):
                 ymax = y
             try:
-                self.hitMapX[x].add((y,desc.replace('|',' ')))
+                self.hitMapX[x].add((y,'m/z: %d Int: %d'%(x,y)))
             except KeyError:
-                self.hitMapX[x] = set([(y,desc.replace('|', ' '))])
+                self.hitMapX[x] = set([(y,'m/z: %d Int: %d'%(x,y))])
             bar = self.subplot.bar(x,y,color=col,align='center')
-            if fragtype == 'spectra':
+            if fragType == 'spectra':
                 bar[0].set_zorder(0)
             else:
-                if not desc:
+                if not fragType:
                     continue
-                desc = desc.split('|')
                 hlen=len(self.hitMapX[x])*5
-                if len(desc) == 3:
-                    txt = '$\mathtt{%s^{%s^{%s+}}}$'%(desc[0].lower(),desc[1],desc[2][:-1])
+                if loss:
+                    txt = '$\mathtt{%s^{%s^{%d+}}}$'%(fragType,loss,fragNum)
                 else:
-                    txt = '$\mathtt{%s^{%s+}}$'%(desc[0].lower(),desc[1][:-1])
+                    txt = '$\mathtt{%s^{%d+}}$'%(fragType,fragNum)
                 self.subplot.text(x,y+hlen,txt,color=tcolor)
         self.subplot.axes.set_xbound(lower=0, upper=xmax+10)
         self.subplot.axes.set_ybound(lower=0, upper=ymax+20)
