@@ -698,12 +698,3 @@ class mgfParser(object):
             return self.scans[scan]
         except KeyError:
             return None
-        
-#f = mgfIterator('/home/chris/cluster/common/src/parallel_tandem_10-12-01-1/bin/Human Proteome/Adrenal_D1.mgf')
-#for row in f:
-#    print 'info',row.getInfo()
-#    print 'charge',row.getCharge()
-#    print 'rt',row.getRT()
-##    print scan.getTitle()
-#f.getScan('Naive_CD4_GelfrEE_B41.548.548.2')
-##    print i.getTitle()
