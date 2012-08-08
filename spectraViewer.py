@@ -51,6 +51,25 @@ class FileDropTarget(wx.FileDropTarget):
       """ Implement File Drop """
       for file in filenames:
          self.parent.addPage(file)
+         
+class SearchPanel(wx.Panel):
+    def __init__(self, parent, grid):
+        wx.Panel.__init__(self, parent)
+        self.grid = grid
+        sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.searchBox = wx.TextCtrl(self, -1, "", style=wx.TE_PROCESS_ENTER)
+        self.searchBox.Bind(wx.EVT_TEXT_ENTER, self.onEnter)
+        self.searchColumn = wx.ComboBox(self, -1, choices=[])
+        sizer.Add(self.searchBox)
+        sizer.Add(self.searchColumn)
+        self.SetSizer(sizer)
+        
+    def updateColumns(self, columns):
+        self.searchColumn.Clear()
+        self.searchColumn.AppendItems(columns)
+        
+    def onEnter(self, event):
+        self.grid.searchFor(self.searchBox.GetValue())
 
 class ViewerGrid(MegaGrid.MegaGrid):
     def __init__(self, *args, **kwrds):
@@ -133,26 +152,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
         """
         col -> sort the data based on the column indexed by col
         """
-        name = self._table.colIndexes[col]
-        _data = []
-
-        for row in self._table.data:
-            rowname, entry = row
-            _data.append((entry.get(name, None), row))
-
-        _data.sort()
-        if self.newGroup:
-            self._table.data = []
-            self.newGroup = False
-            for index,row in enumerate(_data):
-                    if reindex: #changed so the row index is changed with sorting
-                        self._table.data.append((index,row[1][1]))
-                    else:
-                        self._table.data.append(row[1])
-        elif not self.groupBy:
-            self._table.data = []
-            for row in _data:
-                self._table.data.append(row[1])
+        self._table.SortColumn(col,reindex)
     
     def ungroup(self):
         for i in self.dataSet:
@@ -179,7 +179,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
         self.SetRowMinimalAcceptableHeight(0)
         self.dataSet = {}
         gset = self.dataSet
-        col = self._table.GetColLabelValue(self.groupBy)
+        col = self.groupBy
         toDelete = []
         for i in self._table.data:
             groupby = i[1][col]
@@ -200,9 +200,8 @@ class ViewerGrid(MegaGrid.MegaGrid):
                 self.setRowSize(i, 0)
         self.Reset()
                 
-    def appendRow(self, inputData, **kwrds):
-        row=self._table.GetNumberRows()
-        self.AppendRow(row,inputData)
+    def appendRow(self, inputData, reset):
+        self.AppendRow(inputData, reset)
         
     def setType(self, gridType):
         self.gridType = gridType.lower()
@@ -214,6 +213,11 @@ class ViewerGrid(MegaGrid.MegaGrid):
         title = self._table.GetValue(row, 0)
         self.parent.parent.loadScan(title)
         return
+    
+    def searchFor(self, txt):
+        print 'search for',txt
+#        self._table.
+
 
 class MainFrame(wx.Frame):
     def __init__(self):
@@ -440,7 +444,7 @@ class ViewerPanel(wx.SplitterWindow):
                 pepParser = fileIterators.spectraXML(path)
                 self.parent.pepFiles[path] = pepParser
                 for i in pepParser.getScans():
-                    self.dataGrid.appendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()])
+                    self.dataGrid.appendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()], False)
         elif [i for i in specType if i in path]:
             self.fileType = 'spectra'#these are all generic more or less, so spectra works
             self.dataType = 'spectra'
@@ -463,7 +467,12 @@ class ViewerPanel(wx.SplitterWindow):
             self.dataType = 'none'
             self.dataGrid = ViewerGrid(self.gridPanel, data, colnames, plugins)
             self.dataGrid.setType('none')
+        self.dataGrid.Reset()
         megasizer = wx.BoxSizer(wx.VERTICAL)
+        #search panel
+        self.searchPanel = SearchPanel(self.gridPanel, self.dataGrid)
+        self.searchPanel.updateColumns(colnames)
+        megasizer.Add(self.searchPanel, 0, wx.EXPAND)
         megasizer.Add(self.dataGrid, 1, wx.EXPAND)
         self.gridPanel.SetSizer(megasizer)
         self.draw = DrawFrame(self)
@@ -870,7 +879,7 @@ class DrawFrame(PlotPanel):
 
 app = wx.App(False)
 frame = MainFrame()
-#frame.addPage('A1.2012_06_07_12_20_00.t.xml')
+frame.addPage('A1.2012_06_07_12_20_00.t.xml')
 #import wx.lib.inspection
 #wx.lib.inspection.InspectionTool().Show()
 app.MainLoop()

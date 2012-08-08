@@ -1,5 +1,5 @@
 #from http://wxpython-users.1045709.n5.nabble.com/MegaGrid-Example-Shows-how-to-resize-virtual-grids-td2299061.html
-import  wx, itertools, operator, math
+import  wx, itertools, operator, math, numpy as np
 import  wx.grid as  Grid
 
 class MegaTable(Grid.PyGridTableBase):
@@ -7,14 +7,15 @@ class MegaTable(Grid.PyGridTableBase):
     A custom wx.Grid Table using user supplied data
     """
     def __init__(self, data, colnames, plugins):
-        """data is a list of the form
-        [(rowname, dictionary),
+        """data is a numpy array of the form:
+        [rowname, col values]
         dictionary.get(colname, None) returns the data for column
         colname
         """
         # The base class must be initialized *first*
         Grid.PyGridTableBase.__init__(self)
-        self.data = data
+        self.data = np.array(data)
+        self.data = np.resize(len(data)/len(colnames),len(colnames)+1)
         self.hiddencols, self.colnames = [], []
 #        self.colnames = colnames
         self.colIndexes = colnames
@@ -51,16 +52,16 @@ class MegaTable(Grid.PyGridTableBase):
         return self.hiddencols[col]
     
     def GetRowLabelValue(self, row):
-        return "%s" % str(self.data[row][0])
+        return "%s" % str(self.data[row,0])
 
     def GetValue(self, row, col):
-        return str(self.data[row][1].get(self.GetColLabelValue(col), ""))
+        return str(self.data[row,col+1])
     
     def GetRawValue(self, row, col):
-        return self.data[row][1].get(self.GetColLabelValue(col), "")
+        return self.data[row,col+1]
 
     def SetValue(self, row, col, value):
-        self.data[row][1][self.GetColLabelValue(col)] = value
+        self.data[row,self.GetColLabelValue(col)] = value
         
     def ResetView(self, grid):
         """
@@ -127,13 +128,12 @@ class MegaTable(Grid.PyGridTableBase):
 
     # ------------------------------------------------------
     # begin the added code to manipulate the table (non wx related)
-    def AppendRow(self, row, inputData):
-        entry = {}
-        index=0
-        for name,dataEntry in zip(self.colIndexes, inputData):
-            entry[name] = dataEntry
-            index+=1
-        self.data.insert(row, (row,entry))
+    def AppendRow(self, inputData):
+        inputData.insert(0,len(self.data))
+        try:
+            self.data = np.append(self.data,[inputData],axis=0)
+        except ValueError:
+            self.data = np.array([inputData])
 
     def DeleteCols(self, cols):
         """
@@ -143,57 +143,33 @@ class MegaTable(Grid.PyGridTableBase):
         # we'll cheat here and just remove the name from the
         # list of column names.  The data will remain but
         # it won't be shown
-        deleteCount = 0
-        cols = cols[:]
-        cols.sort()
-
-        for i in cols:
-            self.colnames.pop(i-deleteCount)
-            # we need to advance the delete count
-            # to make sure we delete the right columns
-            deleteCount += 1
+        self.data = np.delete(self.data,cols,axis=1)
 
         if not len(self.colnames):
-            self.data = []
+            self.data = np.array([[]])
 
     def DeleteRows(self, rows):
         """
         rows -> delete the rows from the dataset
         rows hold the row indices
         """
-        deleteCount = 0
-        rows = rows[:]
-        rows.sort()
-
-        for i in rows:
-            self.data.pop(i-deleteCount)
-            # we need to advance the delete count
-            # to make sure we delete the right rows
-            deleteCount += 1
-            
+        self.data = np.delete(self.data, rows, axis=0)
+        
     def SetRowLabel(self, row, value):
-        _data = self.data[row]
-        self.data[row] = (value,_data[1])
+        self.data[row,0] = value
 
     def SortColumn(self, col, reindex):
         """
         overridden
         col -> sort the data based on the column indexed by col
         """
-        name = self.colIndexes[col]
-        _data = []
-
-        for row in self.data:
-            rowname, entry = row
-            _data.append((entry.get(name, None), row))
-
-        _data.sort()
-        self.data = []
-        for index,row in enumerate(_data):
-            if reindex: #changed so the row index is changed with sorting
-                self.data.append((index,row[1][1]))
-            else:
-                self.data.append(row[1])
+        if reindex: #changed so the row index is changed with sorting
+            self.data = np.sort(self.data, axis=col)
+            al = len(self.data)
+            indices = np.linspace(0,al-1,al)
+            self.data[:,0] = indices
+        else:
+            self.data = np.sort(self.data, axis=col)
 
     # end table manipulation code
     # ----------------------------------------------------------
@@ -363,9 +339,10 @@ class MegaGrid(Grid.Grid):
     def RemoveRows(self, rows):
         self._table.DeleteRows(rows)
         
-    def AppendRow(self, rowindex, data):
-       self._table.AppendRow(rowindex, data)
-       self.Reset()
+    def AppendRow(self, data, reset):
+       self._table.AppendRow(data)
+       if reset:
+           self.Reset()
        
     def InsertRow(self, rowindex, data):
         self._table.InsertRow(rowindex, data)
