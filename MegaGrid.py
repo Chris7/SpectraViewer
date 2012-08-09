@@ -133,6 +133,7 @@ class MegaTable(Grid.PyGridTableBase):
         try:
             self.data = np.append(self.data,[inputData],axis=0)
         except ValueError:
+            inputData[0]=0
             self.data = np.array([inputData])
 
     def DeleteCols(self, cols):
@@ -163,13 +164,11 @@ class MegaTable(Grid.PyGridTableBase):
         overridden
         col -> sort the data based on the column indexed by col
         """
+        self.data = self.data[self.data[:,col].argsort()]
         if reindex: #changed so the row index is changed with sorting
-            self.data = np.sort(self.data, axis=col)
             al = len(self.data)
             indices = np.linspace(0,al-1,al)
             self.data[:,0] = indices
-        else:
-            self.data = np.sort(self.data, axis=col)
 
     # end table manipulation code
     # ----------------------------------------------------------

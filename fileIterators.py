@@ -538,6 +538,7 @@ class mgfIterator(object):
                     break
             for i in self.ra:
                 f.write('%s\t%d\t%d\n'%(i,self.ra[i][0],self.ra[i][1]))
+            self.f.seek(0)
             
     def getScan(self, title):
         """

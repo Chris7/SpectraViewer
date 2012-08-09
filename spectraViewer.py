@@ -69,7 +69,7 @@ class SearchPanel(wx.Panel):
         self.searchColumn.AppendItems(columns)
         
     def onEnter(self, event):
-        self.grid.searchFor(self.searchBox.GetValue())
+        self.grid.searchFor(self.searchBox.GetValue(),self.searchColumn.GetValue())
 
 class ViewerGrid(MegaGrid.MegaGrid):
     def __init__(self, *args, **kwrds):
@@ -78,6 +78,9 @@ class ViewerGrid(MegaGrid.MegaGrid):
         self.dataSet = {}#used for storing groups of protein
         self.groupBy = None
         self.newGroup = False
+        self.sortCol = None
+        self.searchRecurse = False
+        self.colNames = args[2]
         self.Bind(wx.grid.EVT_GRID_LABEL_LEFT_CLICK, self.onLabelLeftClick)
         
     def onLabelLeftClick(self, evt):
@@ -122,6 +125,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
         if not self.groupBy:
             menu.Append(sortID, "Sort Column (disabled after grouping)")
             def sort(event, self=self, col=col):
+                self.sortCol = col+1
                 self.SortColumn(col, False)
                 self.newGroup = False
                 self.groupBy = None
@@ -214,9 +218,59 @@ class ViewerGrid(MegaGrid.MegaGrid):
         self.parent.parent.loadScan(title)
         return
     
-    def searchFor(self, txt):
-        print 'search for',txt
-#        self._table.
+    def searchFor(self, txt, searchCol):
+        cindex,index = (0,0)
+        cRow = self.GetSelectedRows()
+        if not cRow:
+            cRow=0
+        else:
+            cRow=cRow[0]+1
+#        cRow=0
+        slen = len(txt)
+        if searchCol:
+            cindex = self.colNames.index(searchCol)+1
+        for i in self._table.data[cRow:]:
+            if txt == i[cindex][:slen]:
+                index = int(i[0])
+                self.SelectRow(index)
+                self.MakeCellVisible(index,cindex)
+                self.searchRecurse = False
+                return
+        #couldn't find
+        if not self.searchRecurse:
+            self.SelectRow(0)
+            self.searchRecurse = True
+            self.searchFor(txt, searchCol)
+            return
+#        if isinstance(self.sortCol,int) and cindex == self.sortCol:
+#            #we're sorted, nice
+#            cindex=self.sortCol
+#            index = int(np.searchsorted(self._table.data[cRow:,cindex], txt)/(len(self.colNames)+1))
+##            print index,self.sortCol
+#        else:
+#            #will be a slower...
+#            print 'table data',self._table.data
+#            _sorted = self._table.data[cRow:]
+#            print 'sorted data',_sorted
+#            _sorted = _sorted[_sorted[:,cindex].argsort()]
+#            rowIndex = np.searchsorted(_sorted[:,cindex],txt)
+#            try:
+#                rowValue = _sorted[rowIndex]
+#                index = int(rowValue[0])
+#                if txt not in rowValue[0,cindex]:
+#                    self.SelectRow(index)
+#            except IndexError:
+#                #at end, start from beginning
+#                if self.searchRecurse:
+#                    self.searchRecurse = False
+#                    return
+#                self.SelectRow(0)
+#                self.searchRecurse = True
+#                self.searchFor(txt,searchCol)
+#                return
+#        self.searchRecurse = False
+#        self.SelectRow(index)
+#        self.MakeCellVisible(index,cindex)
 
 
 class MainFrame(wx.Frame):
@@ -437,7 +491,7 @@ class ViewerPanel(wx.SplitterWindow):
     #                rnum+=1
                     sid = i.getAttribute('SpectraId1')
                     if sid:
-                        self.dataGrid.appendRow([sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')])
+                        self.dataGrid.appendRow([sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')], False)
     #                if rnum>50:
     #                    break
             elif self.fileType == 'xml':
@@ -556,7 +610,7 @@ class ViewerPanel(wx.SplitterWindow):
         elif self.fileType == 'spectra':
             try:
                 scan = self.parent.mgfFiles[path].getScan(title)
-            except:
+            except KeyError:
                 mgf = fileIterators.mgfIterator(path)
                 self.parent.mgfFiles[path] = mgf
                 scan = self.parent.mgfFiles[path].getScan(title)
@@ -599,7 +653,7 @@ class PlotPanel(wx.Panel):
         self.canvas.SetMinSize((20,20))
         self.toolbar = NavigationToolbar(self.canvas)
         self.SetColor( color )
-        self.vbox = wx.FlexGridSizer(1,1)
+        self.vbox = wx.FlexGridSizer(3,1)
         self.vbox.AddGrowableCol(0)
         self.vbox.AddGrowableRow(2)
         self.peptidePanel = PeptidePanel(self)
