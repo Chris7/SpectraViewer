@@ -1,5 +1,5 @@
 import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, matplotlib as mpl, figureIons
-import numpy as np
+import numpy as np, time
 
 #some dangerous globals for us
 searchPaths = set([])
@@ -93,8 +93,8 @@ class ViewerGrid(MegaGrid.MegaGrid):
         self.SetRowSize(row,size)
                 
     def rowUnGroup(self, row, event):
-        grouper = self.dataSet[self._table.GetValue(row,self.groupBy)]
-        pid = grouper[0][0]
+        grouper = self.dataSet[self._table.data[row,self.groupBy]]
+        pid = grouper[0]
         if isinstance(pid,int):
             return
         if pid[:-3] != str(row):
@@ -107,9 +107,9 @@ class ViewerGrid(MegaGrid.MegaGrid):
             txt = pid.replace('-','+')
             self._table.SetRowLabel(int(pid[:-3]),txt)
             rsize = 0
-        grouper[0] = (txt,grouper[0][1])
+        grouper[0] = txt
         for i in grouper[1:]:
-            self.setRowSize(i[0],rsize)
+            self.setRowSize(i,rsize)
         self.Reset()
         
     def colPopup(self, col, evt):
@@ -126,7 +126,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
             menu.Append(sortID, "Sort Column (disabled after grouping)")
             def sort(event, self=self, col=col):
                 self.sortCol = col+1
-                self.SortColumn(col, False)
+                self.SortColumn(col, True)
                 self.newGroup = False
                 self.groupBy = None
                 self.Reset()
@@ -142,7 +142,7 @@ class ViewerGrid(MegaGrid.MegaGrid):
             
         menu.Append(groupID, "Group By Column")
         def group(event, self=self, col=col):
-            self.groupBy=col
+            self.groupBy=col+1
             self.newGroup = True
             self.regroup()
 
@@ -184,21 +184,22 @@ class ViewerGrid(MegaGrid.MegaGrid):
         self.dataSet = {}
         gset = self.dataSet
         col = self.groupBy
+        comp = self._table.data[:,self.groupBy]
         toDelete = []
-        for i in self._table.data:
-            groupby = i[1][col]
+        for i,v in np.ndenumerate(comp):
+            groupby = v
             try:
                 gset[groupby]#we have it already? 
-                gset[groupby].append(i)
+                gset[groupby].append(i[0])
                 toDelete.append(i[0])
             except KeyError:
                 #nope, we don't have it
-                gset[groupby] = [i]
+                gset[groupby] = [i[0]]
         for i in gset.keys():
             if len(gset[i])>1:
                 row = gset[i][0]
-                self._table.SetRowLabel(row[0],'%d(+)'%row[0])
-                gset[i][0] = ('%d(+)'%row[0],row[1]) 
+                self._table.SetRowLabel(row,'%d(+)'%row)
+                gset[i][0] = ('%d(+)'%row) 
         if toDelete:
             for i in toDelete:
                 self.setRowSize(i, 0)
@@ -229,19 +230,34 @@ class ViewerGrid(MegaGrid.MegaGrid):
         slen = len(txt)
         if searchCol:
             cindex = self.colNames.index(searchCol)+1
-        for i in self._table.data[cRow:]:
-            if txt == i[cindex][:slen]:
-                index = int(i[0])
-                self.SelectRow(index)
-                self.MakeCellVisible(index,cindex)
-                self.searchRecurse = False
-                return
-        #couldn't find
-        if not self.searchRecurse:
-            self.SelectRow(0)
-            self.searchRecurse = True
-            self.searchFor(txt, searchCol)
-            return
+        elif self.groupBy:
+            cindex = self.groupBy
+        stime = time.clock()
+        ind = np.where(np.core.defchararray.find(self._table.data[cRow:,cindex],txt)!=-1)
+        if not np.any(ind):
+            index = 0
+            cRow = 0
+        else:
+            index = ind[0][0]
+        self.SelectRow(index+cRow)
+        self.MakeCellVisible(index+cRow,cindex)
+        #two old sorting ideas
+#        print 'stime',time.clock()-stime
+#        stime = time.clock()
+#        for i in self._table.data[cRow:]:
+#            if txt == i[cindex][:slen]:
+#                index = int(i[0])
+#                self.SelectRow(index)
+#                self.MakeCellVisible(index,cindex)
+#                self.searchRecurse = False
+#                print 'stime2',time.clock()-stime
+#                return
+#        #couldn't find
+#        if not self.searchRecurse:
+#            self.SelectRow(0)
+#            self.searchRecurse = True
+#            self.searchFor(txt, searchCol)
+#            return
 #        if isinstance(self.sortCol,int) and cindex == self.sortCol:
 #            #we're sorted, nice
 #            cindex=self.sortCol

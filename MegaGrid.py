@@ -167,7 +167,7 @@ class MegaTable(Grid.PyGridTableBase):
         self.data = self.data[self.data[:,col].argsort()]
         if reindex: #changed so the row index is changed with sorting
             al = len(self.data)
-            indices = np.linspace(0,al-1,al)
+            indices = np.arange(0,al)
             self.data[:,0] = indices
 
     # end table manipulation code
