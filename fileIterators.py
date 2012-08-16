@@ -137,9 +137,6 @@ class spectraXML(object):
             print 'XTandem parsing unavailable: lxml is required to parse X!tandem xml files due to the namespaces employed'
             return 
         db = None
-#        for i in dom1.iter('{http://www.bioml.com/gaml/}values'):
-#            print i
-            #print 'hahaha'
         for group in dom1.findall("group"):
             subnote = list(group.iter("note"))
             for i in subnote:

@@ -1,4 +1,4 @@
-import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, matplotlib as mpl, figureIons
+import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, matplotlib as mpl, figureIons, wx.dataview as dv
 import numpy as np, time
 
 #some dangerous globals for us
@@ -51,6 +51,161 @@ class FileDropTarget(wx.FileDropTarget):
       """ Implement File Drop """
       for file in filenames:
          self.parent.addPage(file)
+         
+class ModelNode(object):
+    def __init__(self, name):
+        self.name = name
+        self.subnodes = []
+        
+    def __repr__(self):
+        return 'Node: ' + self.name
+
+class MyDataModel(dv.PyDataViewModel):
+    def __init__(self, data):
+        dv.PyDataViewModel.__init__(self)
+        self.data = data
+        self.objmapper.UseWeakRefs(True)
+        
+    # Report how many columns this model provides data for.
+    def GetColumnCount(self):
+        return 5
+
+    # Map the data column numbers to the data type
+    def GetColumnType(self, col):
+        mapper = { 0 : 'string',
+                   1 : 'string',
+                   2 : 'string',
+                   3 : 'string', # the real value is an int, but the renderer should convert it okay
+                   4 : 'string' # the real value is an int, but the renderer should convert it okay
+                   }
+        return mapper[col]
+        
+    
+    def GetChildren(self, parent, children):  
+        # The view calls this method to find the children of any node in the
+        # control. There is an implicit hidden root node, and the top level
+        # item(s) should be reported as children of this node. A List view
+        # simply provides all items as children of this hidden root. A Tree
+        # view adds additional items as children of the other items, as needed,
+        # to provide the tree hierachy.
+        ##self.log.write("GetChildren\n")
+        
+        # If the parent item is invalid then it represents the hidden root
+        # item, so we'll use the genre objects as its children and they will
+        # end up being the collection of visible roots in our tree.
+        if not parent:
+            for row in self.data:
+                children.append(self.ObjectToItem(row))
+            return len(self.data)
+        
+        # Otherwise we'll fetch the python object associated with the parent
+        # item and make DV items for each of it's child objects.
+        node = self.ItemToObject(parent)
+        if isinstance(node, ModelNode):
+            for subn in node.subnodes:
+                children.append(self.ObjectToItem(subn))
+            return len(node.subnodes)
+        return 0
+    
+
+    def IsContainer(self, item):
+        # Return True if the item has children, False otherwise.
+        ##self.log.write("IsContainer\n")
+        
+        # The hidden root is a container
+        if not item:
+            return True
+        # and in this model the genre objects are containers
+        return False
+        node = self.ItemToObject(item)
+        if isinstance(node, ModelNode):
+            return True
+        # but everything else (the song objects) are not
+        return False    
+
+
+    #def HasContainerColumns(self, item):
+    #    self.log.write('HasContainerColumns\n')
+    #    return True
+
+    
+    def GetParent(self, item):
+        # Return the item which is this item's parent.
+        ##self.log.write("GetParent\n")
+        
+        if not item:
+            return dv.NullDataViewItem
+
+        node = self.ItemToObject(item)        
+        if isinstance(node, ModelNode):
+            return dv.NullDataViewItem
+        else:
+            for g in self.data:
+                if row[0] == node.name:
+                    return self.ObjectToItem(g)
+            
+        
+    def GetValue(self, item, col):
+        # Return the value to be displayed for this item and column. For this
+        # example we'll just pull the values from the data objects we
+        # associated with the items in GetChildren.
+        
+        # Fetch the data object for this item.
+        node = self.ItemToObject(item)
+        
+        if isinstance(node, ModelNode):
+            # We'll only use the first column for the Genre objects,
+            # for the other columns lets just return empty values
+            mapper = { 0 : node.name,
+                       1 : "",
+                       2 : "",
+                       3 : "",
+                       4 : "",
+                       }
+            return mapper[col]
+            
+        
+        else:
+            mapper = { 0 : node.genre,
+                       1 : node.artist,
+                       2 : node.title,
+                       3 : node.id,
+                       4 : node.id
+                       }
+            return mapper[col]
+        
+
+
+    def GetAttr(self, item, col, attr):
+        ##self.log.write('GetAttr')
+        node = self.ItemToObject(item)
+        if isinstance(node, ModelNode):
+            attr.SetColour('blue')
+            attr.SetBold(True)
+            return True
+        return False
+    
+
+    def SetValue(self, value, item, col):
+        node = self.ItemToObject(item)
+        pass
+#        self.log.write("SetValue: %s\n" % value)
+#        
+#        # We're not allowing edits in column zero (see below) so we just need
+#        # to deal with Song objects and cols 1 - 5
+#        
+#        node = self.ItemToObject(item)
+#        if isinstance(node, Song):
+#            if col == 1:
+#                node.artist = value
+#            elif col == 2:
+#                node.title = value
+#            elif col == 3:
+#                node.id = value
+#            elif col == 4:
+#                node.date = value
+#            elif col == 5:
+#                node.like = value
          
 class SearchPanel(wx.Panel):
     def __init__(self, parent, grid):
@@ -485,6 +640,7 @@ class ViewerPanel(wx.SplitterWindow):
         wx.SplitterWindow.__init__(self, parent, -1,**kwrds)
         self.parent = parent
         self.gridPanel = wx.Panel(self, -1)
+        self.dataCtrl = wx.dataview.DataViewCtrl(self.gridPanel,-1)
         self.gridPanel.parent = self
         self.path = path
         pepSpecType = ('gff', 'xml')
@@ -515,6 +671,19 @@ class ViewerPanel(wx.SplitterWindow):
                 self.parent.pepFiles[path] = pepParser
                 for i in pepParser.getScans():
                     self.dataGrid.appendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()], False)
+                self.myModel = MyDataModel(self.dataGrid._table.data) 
+                self.dataCtrl.AssociateModel(self.myModel)
+                self.myModel.DecRef()
+                self.tr = tr = dv.DataViewTextRenderer()
+                c0 = dv.DataViewColumn("Scan Title",
+                                       tr,
+                                       0,
+                                       width=80)
+                self.dataCtrl.AppendColumn(c0)
+                c1 = self.dataCtrl.AppendTextColumn("Peptide",   1, width=170)
+                c2 = self.dataCtrl.AppendTextColumn("Modifications",   2, width=170)
+                c3 = self.dataCtrl.AppendTextColumn("Charge",   3, width=170)
+                c4 = self.dataCtrl.AppendTextColumn("Accession",   4, width=170)
         elif [i for i in specType if i in path]:
             self.fileType = 'spectra'#these are all generic more or less, so spectra works
             self.dataType = 'spectra'
@@ -543,7 +712,8 @@ class ViewerPanel(wx.SplitterWindow):
         self.searchPanel = SearchPanel(self.gridPanel, self.dataGrid)
         self.searchPanel.updateColumns(colnames)
         megasizer.Add(self.searchPanel, 0, wx.EXPAND)
-        megasizer.Add(self.dataGrid, 1, wx.EXPAND)
+        #megasizer.Add(self.dataGrid, 1, wx.EXPAND)
+        megasizer.Add(self.dataCtrl, 1, wx.EXPAND)
         self.gridPanel.SetSizer(megasizer)
         self.draw = DrawFrame(self)
         self.SplitHorizontally(self.draw,self.gridPanel, sashPosition=self.GetSize()[1]*2/3)
