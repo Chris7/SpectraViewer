@@ -1,4 +1,4 @@
-import wx, MegaGrid, fileIterators, operator, os, re, wx.aui, ConfigParser, random, matplotlib as mpl, figureIons, wx.dataview as dv
+import wx, fileIterators, operator, os, re, wx.aui, ConfigParser, random, matplotlib as mpl, figureIons, wx.dataview as dv, collections
 import numpy as np, time
 
 #some dangerous globals for us
@@ -51,36 +51,65 @@ class FileDropTarget(wx.FileDropTarget):
       """ Implement File Drop """
       for file in filenames:
          self.parent.addPage(file)
-         
+
+class MyDataCtrl(dv.DataViewCtrl):
+    def __init__(self, parent):
+        dv.DataViewCtrl.__init__(self, parent)
+        self.parent = parent.parent
+        self.Bind(dv.EVT_DATAVIEW_COLUMN_HEADER_RIGHT_CLICK, self.onHeaderRightClick)
+        self.Bind(dv.EVT_DATAVIEW_ITEM_ACTIVATED, self.onActivate)
+        
+    def setColumns(self, columns):
+        for i,v in enumerate(columns):
+            c1 = self.AppendTextColumn(v, i, width=170)
+            c1.SetSortable(True)
+        
+    def onActivate(self, event):
+        item = self.model.ItemToObject(self.GetCurrentItem())
+        scanTitle = item.data[0]
+        self.viewPanel.loadScan(scanTitle)
+        
+    def onHeaderRightClick(self, event):
+        menu = wx.Menu()
+        id1 = wx.NewId()
+        groupID = wx.NewId()
+        xo, yo = event.GetPosition()
+
+        col = event.Column
+        menu.Append(groupID, "Group By Column")
+
+        def groupBy(event, self=self, col=col):
+            self.parent.Group(col)
+            
+        self.Bind(wx.EVT_MENU, groupBy, id=groupID)
+        self.PopupMenu(menu)
+        menu.Destroy()
+        return
+    
 class ModelNode(object):
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, data):
+        self.data = data
+        self.parent = dv.NullDataViewItem
         self.subnodes = []
         
     def __repr__(self):
-        return 'Node: ' + self.name
+        return ','.join(self.data)
 
 class MyDataModel(dv.PyDataViewModel):
-    def __init__(self, data):
+    def __init__(self, data, clen):
         dv.PyDataViewModel.__init__(self)
         self.data = data
+        self.clen = clen
         self.objmapper.UseWeakRefs(True)
         
     # Report how many columns this model provides data for.
     def GetColumnCount(self):
-        return 5
+        return self.clen
 
     # Map the data column numbers to the data type
     def GetColumnType(self, col):
-        mapper = { 0 : 'string',
-                   1 : 'string',
-                   2 : 'string',
-                   3 : 'string', # the real value is an int, but the renderer should convert it okay
-                   4 : 'string' # the real value is an int, but the renderer should convert it okay
-                   }
-        return mapper[col]
+        return 'string'#we're all strings
         
-    
     def GetChildren(self, parent, children):  
         # The view calls this method to find the children of any node in the
         # control. There is an implicit hidden root node, and the top level
@@ -94,18 +123,13 @@ class MyDataModel(dv.PyDataViewModel):
         # item, so we'll use the genre objects as its children and they will
         # end up being the collection of visible roots in our tree.
         if not parent:
-            for row in self.data:
-                children.append(self.ObjectToItem(row))
-            return len(self.data)
-        
-        # Otherwise we'll fetch the python object associated with the parent
-        # item and make DV items for each of it's child objects.
+                for row in self.data:
+                    children.append(self.ObjectToItem(row))
+                return len(self.data)
         node = self.ItemToObject(parent)
-        if isinstance(node, ModelNode):
-            for subn in node.subnodes:
-                children.append(self.ObjectToItem(subn))
-            return len(node.subnodes)
-        return 0
+        for subn in node.subnodes:
+            children.append(self.ObjectToItem(subn))
+        return len(node.subnodes)
     
 
     def IsContainer(self, item):
@@ -115,18 +139,15 @@ class MyDataModel(dv.PyDataViewModel):
         # The hidden root is a container
         if not item:
             return True
-        # and in this model the genre objects are containers
-        return False
         node = self.ItemToObject(item)
-        if isinstance(node, ModelNode):
+        if len(node.subnodes):
             return True
         # but everything else (the song objects) are not
         return False    
 
 
-    #def HasContainerColumns(self, item):
-    #    self.log.write('HasContainerColumns\n')
-    #    return True
+    def HasContainerColumns(self, item):
+        return True
 
     
     def GetParent(self, item):
@@ -136,14 +157,8 @@ class MyDataModel(dv.PyDataViewModel):
         if not item:
             return dv.NullDataViewItem
 
-        node = self.ItemToObject(item)        
-        if isinstance(node, ModelNode):
-            return dv.NullDataViewItem
-        else:
-            for g in self.data:
-                if row[0] == node.name:
-                    return self.ObjectToItem(g)
-            
+        node = self.ItemToObject(item)
+        return node.parent
         
     def GetValue(self, item, col):
         # Return the value to be displayed for this item and column. For this
@@ -151,66 +166,26 @@ class MyDataModel(dv.PyDataViewModel):
         # associated with the items in GetChildren.
         
         # Fetch the data object for this item.
+#        print 'grabbing value'
         node = self.ItemToObject(item)
-        
-        if isinstance(node, ModelNode):
-            # We'll only use the first column for the Genre objects,
-            # for the other columns lets just return empty values
-            mapper = { 0 : node.name,
-                       1 : "",
-                       2 : "",
-                       3 : "",
-                       4 : "",
-                       }
-            return mapper[col]
-            
-        
-        else:
-            mapper = { 0 : node.genre,
-                       1 : node.artist,
-                       2 : node.title,
-                       3 : node.id,
-                       4 : node.id
-                       }
-            return mapper[col]
-        
-
+        return node.data[col]
 
     def GetAttr(self, item, col, attr):
         ##self.log.write('GetAttr')
         node = self.ItemToObject(item)
-        if isinstance(node, ModelNode):
+        if len(node.subnodes):
             attr.SetColour('blue')
             attr.SetBold(True)
             return True
         return False
     
-
     def SetValue(self, value, item, col):
-        node = self.ItemToObject(item)
         pass
-#        self.log.write("SetValue: %s\n" % value)
-#        
-#        # We're not allowing edits in column zero (see below) so we just need
-#        # to deal with Song objects and cols 1 - 5
-#        
-#        node = self.ItemToObject(item)
-#        if isinstance(node, Song):
-#            if col == 1:
-#                node.artist = value
-#            elif col == 2:
-#                node.title = value
-#            elif col == 3:
-#                node.id = value
-#            elif col == 4:
-#                node.date = value
-#            elif col == 5:
-#                node.like = value
          
 class SearchPanel(wx.Panel):
-    def __init__(self, parent, grid):
+    def __init__(self, parent):
         wx.Panel.__init__(self, parent)
-        self.grid = grid
+        self.parent = parent
         sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.searchBox = wx.TextCtrl(self, -1, "", style=wx.TE_PROCESS_ENTER)
         self.searchBox.Bind(wx.EVT_TEXT_ENTER, self.onEnter)
@@ -222,227 +197,38 @@ class SearchPanel(wx.Panel):
     def updateColumns(self, columns):
         self.searchColumn.Clear()
         self.searchColumn.AppendItems(columns)
+        self.columns = columns
         
     def onEnter(self, event):
-        self.grid.searchFor(self.searchBox.GetValue(),self.searchColumn.GetValue())
-
-class ViewerGrid(MegaGrid.MegaGrid):
-    def __init__(self, *args, **kwrds):
-        MegaGrid.MegaGrid.__init__(self, *args, **kwrds)
-        self.gridType = None
-        self.dataSet = {}#used for storing groups of protein
-        self.groupBy = None
-        self.newGroup = False
-        self.sortCol = None
-        self.searchRecurse = False
-        self.colNames = args[2]
-        self.Bind(wx.grid.EVT_GRID_LABEL_LEFT_CLICK, self.onLabelLeftClick)
-        
-    def onLabelLeftClick(self, evt):
-        row, col = evt.GetRow(), evt.GetCol()
-        if self.groupBy:
-            if col == -1: self.rowUnGroup(row, evt)
-            
-    def setRowSize(self,row, size):
-        self.SetRowMinimalHeight(row,size)
-        self.SetRowSize(row,size)
-                
-    def rowUnGroup(self, row, event):
-        grouper = self.dataSet[self._table.data[row,self.groupBy]]
-        pid = grouper[0]
-        if isinstance(pid,int):
-            return
-        if pid[:-3] != str(row):
-            return
-        if pid[-2] == '+':
-            txt = pid.replace('+','-')
-            self._table.SetRowLabel(int(pid[:-3]),txt)
-            rsize = 20
+        searchFor = self.searchBox.GetValue()
+        searchCol = self.columns.index(self.searchColumn.GetValue())
+        if not searchCol:
+            searchCol = 0
+        id = self.dataCtrl.GetSelection()
+        try:
+            item = self.dataCtrl.model.ItemToObject(id)
+        except KeyError:
+            item = None
+        if item is None:
+            for i,v in zip(self.data.iterkeys(),self.data.itervalues()):
+                if searchFor in v.data[searchCol]:
+                    node = self.dataCtrl.model.data[i]
+                    item = self.dataCtrl.model.ObjectToItem(node)
+                    self.dataCtrl.Select(item)
+                    break
         else:
-            txt = pid.replace('-','+')
-            self._table.SetRowLabel(int(pid[:-3]),txt)
-            rsize = 0
-        grouper[0] = txt
-        for i in grouper[1:]:
-            self.setRowSize(i,rsize)
-        self.Reset()
-        
-    def colPopup(self, col, evt):
-        """(col, evt) -> display a popup menu when a column label is
-        right clicked"""
-        x = self.GetColSize(col)/2
-        menu = wx.Menu()
-        id1 = wx.NewId()
-        sortID = wx.NewId()
-        groupID = wx.NewId()
-        xo, yo = evt.GetPosition()
-        self.Refresh()
-        if not self.groupBy:
-            menu.Append(sortID, "Sort Column (disabled after grouping)")
-            def sort(event, self=self, col=col):
-                self.sortCol = col+1
-                self.SortColumn(col, True)
-                self.newGroup = False
-                self.groupBy = None
-                self.Reset()
-            self.Bind(wx.EVT_MENU, sort, id=sortID)
-        else:
-            menu.Append(sortID, "Ungroup")
-            def ungroup(event, self=self, col=col):
-                self.groupBy = None
-                self.newGroup = False
-                self.ungroup()
-            self.Bind(wx.EVT_MENU, ungroup, id=sortID)
-            
-            
-        menu.Append(groupID, "Group By Column")
-        def group(event, self=self, col=col):
-            self.groupBy=col+1
-            self.newGroup = True
-            self.regroup()
-
-        self.Bind(wx.EVT_MENU, group, id=groupID)
-
-        self.PopupMenu(menu)
-        menu.Destroy()
-        return
-    
-    def SortColumn(self, col, reindex):
-        """
-        col -> sort the data based on the column indexed by col
-        """
-        self._table.SortColumn(col,reindex)
-    
-    def ungroup(self):
-        for i in self.dataSet:
-            if isinstance(self.dataSet[i][0][0],int):
-                continue
-            rid = int(self.dataSet[i][0][0][:-3])
-            self._table.SetRowLabel(rid,rid)
-            for j in self.dataSet[i][1:]:
-                self.setRowSize(j[0],20)
-        self.Reset()
-    
-    def regroup(self):
-        #have we grouped already?
-        if self.dataSet:
-            for i in self.dataSet:
-                if isinstance(self.dataSet[i][0][0],int):
-                    continue
-                rid = int(self.dataSet[i][0][0][:-3])
-                self._table.SetRowLabel(rid,rid)
-                for j in self.dataSet[i][1:]:
-                    self.setRowSize(j[0],20)
-        #first we sort so things get nested properly
-        self.SortColumn(self.groupBy, True)
-        self.SetRowMinimalAcceptableHeight(0)
-        self.dataSet = {}
-        gset = self.dataSet
-        col = self.groupBy
-        comp = self._table.data[:,self.groupBy]
-        toDelete = []
-        for i,v in np.ndenumerate(comp):
-            groupby = v
-            try:
-                gset[groupby]#we have it already? 
-                gset[groupby].append(i[0])
-                toDelete.append(i[0])
-            except KeyError:
-                #nope, we don't have it
-                gset[groupby] = [i[0]]
-        for i in gset.keys():
-            if len(gset[i])>1:
-                row = gset[i][0]
-                self._table.SetRowLabel(row,'%d(+)'%row)
-                gset[i][0] = ('%d(+)'%row) 
-        if toDelete:
-            for i in toDelete:
-                self.setRowSize(i, 0)
-        self.Reset()
-                
-    def appendRow(self, inputData, reset):
-        self.AppendRow(inputData, reset)
-        
-    def setType(self, gridType):
-        self.gridType = gridType.lower()
-        
-    def cellPopup(self, row, col, event):
-        """(row, col, evt) -> display a spectra when cell is right clicked """
-        if not self.gridType:
-            return
-        title = self._table.GetValue(row, 0)
-        self.parent.parent.loadScan(title)
-        return
-    
-    def searchFor(self, txt, searchCol):
-        cindex,index = (0,0)
-        cRow = self.GetSelectedRows()
-        if not cRow:
-            cRow=0
-        else:
-            cRow=cRow[0]+1
-#        cRow=0
-        slen = len(txt)
-        if searchCol:
-            cindex = self.colNames.index(searchCol)+1
-        elif self.groupBy:
-            cindex = self.groupBy
-        stime = time.clock()
-        ind = np.where(np.core.defchararray.find(self._table.data[cRow:,cindex],txt)!=-1)
-        if not np.any(ind):
-            index = 0
-            cRow = 0
-        else:
-            index = ind[0][0]
-        self.SelectRow(index+cRow)
-        self.MakeCellVisible(index+cRow,cindex)
-        #two old sorting ideas
-#        print 'stime',time.clock()-stime
-#        stime = time.clock()
-#        for i in self._table.data[cRow:]:
-#            if txt == i[cindex][:slen]:
-#                index = int(i[0])
-#                self.SelectRow(index)
-#                self.MakeCellVisible(index,cindex)
-#                self.searchRecurse = False
-#                print 'stime2',time.clock()-stime
-#                return
-#        #couldn't find
-#        if not self.searchRecurse:
-#            self.SelectRow(0)
-#            self.searchRecurse = True
-#            self.searchFor(txt, searchCol)
-#            return
-#        if isinstance(self.sortCol,int) and cindex == self.sortCol:
-#            #we're sorted, nice
-#            cindex=self.sortCol
-#            index = int(np.searchsorted(self._table.data[cRow:,cindex], txt)/(len(self.colNames)+1))
-##            print index,self.sortCol
-#        else:
-#            #will be a slower...
-#            print 'table data',self._table.data
-#            _sorted = self._table.data[cRow:]
-#            print 'sorted data',_sorted
-#            _sorted = _sorted[_sorted[:,cindex].argsort()]
-#            rowIndex = np.searchsorted(_sorted[:,cindex],txt)
-#            try:
-#                rowValue = _sorted[rowIndex]
-#                index = int(rowValue[0])
-#                if txt not in rowValue[0,cindex]:
-#                    self.SelectRow(index)
-#            except IndexError:
-#                #at end, start from beginning
-#                if self.searchRecurse:
-#                    self.searchRecurse = False
-#                    return
-#                self.SelectRow(0)
-#                self.searchRecurse = True
-#                self.searchFor(txt,searchCol)
-#                return
-#        self.searchRecurse = False
-#        self.SelectRow(index)
-#        self.MakeCellVisible(index,cindex)
-
+            match = False
+            for topNode in self.data.iterkeys():
+                subnodes = [subnode for subnode in topNode.subnodes]
+                subnodes.insert(0,topNode)
+                for node in subnodes:
+                    if node is not item and searchFor in node.data[searchCol]:
+                        item = self.dataCtrl.model.ObjectToItem(node)
+                        self.dataCtrl.Select(item)
+                        self.dataCtrl.ExpandAncestors(item)
+                        print 'found it',node.data,item
+                        print 'selected item',self.dataCtrl.model.ItemToObject(self.dataCtrl.GetSelection()),self.dataCtrl.GetSelection()
+                        return
 
 class MainFrame(wx.Frame):
     def __init__(self):
@@ -640,83 +426,119 @@ class ViewerPanel(wx.SplitterWindow):
         wx.SplitterWindow.__init__(self, parent, -1,**kwrds)
         self.parent = parent
         self.gridPanel = wx.Panel(self, -1)
-        self.dataCtrl = wx.dataview.DataViewCtrl(self.gridPanel,-1)
         self.gridPanel.parent = self
         self.path = path
+        
+        #the viewer grid table where the information about the current scan file is stored
+        self.dataCtrl = MyDataCtrl(self.gridPanel)
+        self.dataCtrl.viewPanel = self
+        self.data = collections.OrderedDict()
+        self.objMap = {}
         pepSpecType = ('gff', 'xml')
         specType = ('mgf',)
         if [i for i in pepSpecType if i in path]:
             self.fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
             colnames = ["Scan Title", "Peptide", "Modifications", "Charge", "Accession"]
-            data = []
-            plugins = {}
-            self.dataGrid = ViewerGrid(self.gridPanel, data, colnames, plugins)
-            self.dataGrid.setType('pepspectra')
+            self.dataCtrl.setColumns(colnames)
             self.dataType = 'pepspectra'
             if self.fileType == 'gff':
                 gffIterator = fileIterators.GFFIterator(path, random=['SpectraId1', 'SpectraId2'])
                 self.parent.gffFiles[path] = gffIterator
-    #            rnum=0
                 for i in gffIterator:
                     if not i:
                         continue
-    #                rnum+=1
                     sid = i.getAttribute('SpectraId1')
                     if sid:
-                        self.dataGrid.appendRow([sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')], False)
-    #                if rnum>50:
-    #                    break
+                        toAdd = [sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')]
+                        nid = toAdd[1]#group on peptide by default
+                        newNode = ModelNode(toAdd)
+                        node = self.objMap.get(nid)
+                        if node is None:
+                            self.data[newNode] = newNode
+                            self.objMap[nid] = newNode
+                        else:
+                            self.data[node].subnodes.append(newNode)
             elif self.fileType == 'xml':
                 pepParser = fileIterators.spectraXML(path)
                 self.parent.pepFiles[path] = pepParser
                 for i in pepParser.getScans():
-                    self.dataGrid.appendRow([i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()], False)
-                self.myModel = MyDataModel(self.dataGrid._table.data) 
+                    toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
+                    nid = toAdd[1]#group on peptide by default
+                    newNode = ModelNode(toAdd)
+                    node = self.objMap.get(nid)
+                    if node is None:
+                        self.data[newNode] = newNode
+                        self.objMap[nid] = newNode
+                    else:
+                        self.data[node].subnodes.append(newNode)
+                self.myModel = MyDataModel(self.data, len(toAdd)) 
                 self.dataCtrl.AssociateModel(self.myModel)
+                self.dataCtrl.model=self.myModel
+                self.dataCtrl.objMap = self.objMap
                 self.myModel.DecRef()
-                self.tr = tr = dv.DataViewTextRenderer()
-                c0 = dv.DataViewColumn("Scan Title",
-                                       tr,
-                                       0,
-                                       width=80)
-                self.dataCtrl.AppendColumn(c0)
-                c1 = self.dataCtrl.AppendTextColumn("Peptide",   1, width=170)
-                c2 = self.dataCtrl.AppendTextColumn("Modifications",   2, width=170)
-                c3 = self.dataCtrl.AppendTextColumn("Charge",   3, width=170)
-                c4 = self.dataCtrl.AppendTextColumn("Accession",   4, width=170)
         elif [i for i in specType if i in path]:
             self.fileType = 'spectra'#these are all generic more or less, so spectra works
             self.dataType = 'spectra'
             colnames = ["Scan Title", "Charge", "RT", "Precursor Mass"]
-            data = []
-            plugins = {}
-            self.dataGrid = ViewerGrid(self.gridPanel, data, colnames, plugins)
-            self.dataGrid.setType('spectra')
+            self.dataCtrl.setColumns(colnames)
             mgf = fileIterators.mgfIterator(path, random=True)
             self.parent.mgfFiles[path] = mgf
             for i in mgf:
                 if not i:
                     continue
-                self.dataGrid.appendRow([i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()])
+                toAdd = [i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()]
+                nid = toAdd[0]#group on title by default (should be unique)
+                newNode = ModelNode(toAdd)
+                node = self.objMap.get(nid)
+                if node is None:
+                    self.data[newNode] = newNode
+                    self.objMap[nid] = newNode
+                else:
+                    self.data[node].subnodes.append(newNode)
         else:
-            data = []
-            plugins = {}
             colnames = ["none"]
             self.fileType = 'none'
             self.dataType = 'none'
-            self.dataGrid = ViewerGrid(self.gridPanel, data, colnames, plugins)
-            self.dataGrid.setType('none')
-        self.dataGrid.Reset()
         megasizer = wx.BoxSizer(wx.VERTICAL)
         #search panel
-        self.searchPanel = SearchPanel(self.gridPanel, self.dataGrid)
+        self.searchPanel = SearchPanel(self.gridPanel)
+        self.searchPanel.data = self.data
+        self.searchPanel.dataCtrl = self.dataCtrl
         self.searchPanel.updateColumns(colnames)
         megasizer.Add(self.searchPanel, 0, wx.EXPAND)
-        #megasizer.Add(self.dataGrid, 1, wx.EXPAND)
         megasizer.Add(self.dataCtrl, 1, wx.EXPAND)
         self.gridPanel.SetSizer(megasizer)
         self.draw = DrawFrame(self)
         self.SplitHorizontally(self.draw,self.gridPanel, sashPosition=self.GetSize()[1]*2/3)
+        
+    def Group(self, col):
+        newData = collections.OrderedDict()
+        objMap = {}
+        for i in self.data:
+            i.subnodes.insert(0,i)
+            for subnode in i.subnodes:
+                toAdd = subnode.data
+                nid = toAdd[col]#group on peptide by default
+                newNode = ModelNode(toAdd)
+                node = objMap.get(nid)
+                if node is None:
+                    newData[newNode] = newNode
+                    objMap[nid] = newNode
+                else:
+                    newData[node].subnodes.append(newNode)
+            i.subnodes.pop(0)
+        self.data.clear()
+        self.objMap.clear()
+        self.data = newData
+        self.objMap = objMap
+        newModel = MyDataModel(self.data, len(toAdd))
+        if self.myModel is not None:
+            self.myModel.thisown = False
+        self.dataCtrl.AssociateModel(newModel)
+        self.myModel = newModel
+        self.dataCtrl.model = self.myModel
+        self.dataCtrl.objMap = self.objMap
+        self.myModel.DecRef()
         
     def getTolerance(self):
         return float(self.draw.etolerance.GetValue())
@@ -1119,7 +941,7 @@ class DrawFrame(PlotPanel):
 
 app = wx.App(False)
 frame = MainFrame()
-frame.addPage('A1.2012_06_07_12_20_00.t.xml')
+#frame.addPage('A1.2012_06_07_12_20_00.t.xml')
 #import wx.lib.inspection
 #wx.lib.inspection.InspectionTool().Show()
 app.MainLoop()
