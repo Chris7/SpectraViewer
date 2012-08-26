@@ -7,6 +7,11 @@ from PyQt4.QtGui import *
 
 import SpecView
 
+#some dangerous globals for us
+searchPaths = set([])
+fileNames = {}
+titleParse = re.compile('(.+?)\.\d+\.\d+\.\d+|\w+')
+
 def loadFolder(path):
     global searchPaths,fileNames
     for root,dir,files in os.walk(path):
@@ -41,7 +46,7 @@ class PeptidePanel(QWidget):
     def __init__(self, parent):
         QWidget.__init__(self)
         self.parent = parent
-        self.peptide = "ABCDEF"
+        self.peptide = ""
         self.sLen = len(self.peptide)
         self.ions = {}
         
@@ -50,7 +55,7 @@ class PeptidePanel(QWidget):
         self.sLen = len(pep)
         self.revTypes = set([])
         self.ions = ions
-        self.Update()
+        self.update()
         
     def paintEvent(self, event):
         if not self.peptide:
@@ -153,19 +158,19 @@ class PeptidePanel(QWidget):
                         ay = cy+th/2
                         qp.drawLine(QLineF(lx,ay,lx+tw/2,ay))
                         qp.setPen(QColor(255,0,0))
-                        qp.drawText(QPoint(lx-iw,ay-iah/2),"a")
+                        qp.drawText(QPoint(lx-iw/2,ay),"a")
                     elif fragType == 'b':
                         by = cy+th/2+iah
                         qp.setPen(QColor((255,0,0)))
                         qp.drawLine(QLineF(lx,by,lx+tw/2,by))
                         qp.setPen(QColor(255,0,0))
-                        qp.drawText(QPoint(lx-iw,by-ibh/2), "b")
+                        qp.drawText(QPoint(lx-iw/2,by), "b")
                     elif fragType == 'c':
                         cy2 = cy+th/2+iah+ibh
                         qp.setPen(QColor((255,0,0)))
                         qp.drawLine(QLineF(lx,cy2,lx+tw/2,cy2))
                         qp.setPen(QColor(255,0,0))
-                        qp.drawText(QPoint(lx-iw,cy2-ich/2), "c")
+                        qp.drawText(QPoint(lx-iw/2,cy2), "c")
             except KeyError:
                 pass
             try:
@@ -177,21 +182,21 @@ class PeptidePanel(QWidget):
                         qp.setPen(QColor((0,0,255)))
                         qp.drawLine(QLineF(lx+tw,xy,lx+tw/2,xy))
                         qp.setPen(QColor(0,0,255))
-                        qp.drawText(QPoint(lx+tw,xy-ixh/2),"x")
+                        qp.drawText(QPoint(lx+tw,xy),"x")
                     elif fragType == 'y':
                         #we're x/y/z ions, we go in reverse
                         yy = cy-th/2-ixh
                         qp.setPen(QColor((0,0,255)))
                         qp.drawLine(QLineF(lx+tw,yy,lx+tw/2,yy))
                         qp.setPen(QColor(0,0,255))
-                        qp.drawText(QPoint(lx+tw,yy-iyh/2), "y")
+                        qp.drawText(QPoint(lx+tw,yy), "y")
                     elif fragType == 'z':
                         #we're x/y/z ions, we go in reverse
                         zy = cy-th/2
                         qp.setPen(QColor((0,0,255)))
                         qp.drawLine(QLineF(lx+tw,zy,lx+tw/2,zy))
                         qp.setPen(QColor(0,0,255))
-                        qp.drawText(QPoint(lx+tw,zy-izh/2), "z")
+                        qp.drawText(QPoint(lx+tw,zy), "z")
             except KeyError:
                 pass
             lx+=tw+5
@@ -204,26 +209,48 @@ class MainWindow(QMainWindow):
         self._form = SpecView.Ui_MainWindow()
         self._form.setupUi(self)
         self._form.retranslateUi(self)
+        self.pepFiles = {}
+        self.mgfFiles = {}
+        self.gffFiles = {}
+        self.tabs = []
+        self.show()
+        
+    def addPage(self, path):
+        vt = ViewerTab(self, path)
+        self.tabs.append(vt)
+        self._form.tabWidget.addTab(vt, os.path.splitext(path)[0])
+        self._form.tabWidget.setCurrentWidget(vt)
+        vt.addPage(path)
+        
+class ViewerTab(QWidget):
+    def __init__(self, parent, path):
+        QWidget.__init__(self)
+        self.parent = parent
+        self.data = collections.OrderedDict()
+        self.objMap = {}
         self.fileType = ""
+        self.path = path
+        
+    def onClick(self, item, col):
+        scanTitle = item.text(0)
+        self.loadScan(str(scanTitle))
+        
+    def addPage(self, path):
+        #set up our page layout
         splitter = QSplitter()
-        self._form.verticalLayout_3.addWidget(splitter)
+        self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
+        self.vl.setObjectName('vl')
+        self.vl.addWidget(splitter)
         splitter.setOrientation(Qt.Vertical)
-        splitter.setParent(self._form.tab)
+        splitter.setParent(self)
         self.peptidePanel = PeptidePanel(self)
         self.draw = DrawFrame(self)
         splitter.addWidget(self.peptidePanel)
         splitter.addWidget(self.draw)
-        self.pepFiles = {}
-        self.mgfFiles = {}
-        self.gffFiles = {}
-        #tree view
         self.tree = QTreeWidget()
         splitter.addWidget(self.tree)
-        self.show()
-        
-    def addPage(self, path):
-        self.data = collections.OrderedDict()
-        self.objMap = {}
+        self.tree.itemDoubleClicked.connect(self.onClick)
+        #The MS Stuff
         pepSpecType = ('gff', 'xml')
         specType = ('mgf',)
         if [i for i in pepSpecType if i in path]:
@@ -253,7 +280,7 @@ class MainWindow(QMainWindow):
                             self.data[node].subnodes.append(newNode)
             elif self.fileType == 'xml':
                 pepParser = fileIterators.spectraXML(path)
-                self.pepFiles[path] = pepParser
+                self.parent.pepFiles[path] = pepParser
                 for i in pepParser.getScans():
                     toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
                     nid = toAdd[1]#group on peptide by default
@@ -271,7 +298,7 @@ class MainWindow(QMainWindow):
             self.dataType = 'spectra'
             colnames = ["Scan Title", "Charge", "RT", "Precursor Mass"]
             mgf = fileIterators.mgfIterator(path, random=True)
-            self.mgfFiles[path] = mgf
+            self.parent.mgfFiles[path] = mgf
             for i in mgf:
                 if not i:
                     continue
@@ -322,7 +349,7 @@ class MainWindow(QMainWindow):
             i.addChildren(self.data[i])
         
     def getTolerance(self):
-        return float(self.draw.etolerance.GetValue())
+        return float(self.draw.etolerance.text())
         
     def reloadScan(self):
         try:
@@ -709,11 +736,6 @@ app = QApplication(sys.argv)
 w = MainWindow()
 w.addPage('A1.2012_06_07_12_20_00.t.xml')
 app.exec_()
-
-#some dangerous globals for us
-searchPaths = set([])
-fileNames = {}
-titleParse = re.compile('(.+?)\.\d+\.\d+\.\d+|\w+')
 
 
 
