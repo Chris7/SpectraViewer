@@ -50,6 +50,9 @@ class PeptidePanel(QWidget):
         self.sLen = len(self.peptide)
         self.ions = {}
         
+    def sizeHint(self):
+        return QSize(self.width(), 100)
+        
     def plotPeptide(self, pep, ions):
         self.peptide = pep
         self.sLen = len(pep)
@@ -213,12 +216,29 @@ class MainWindow(QMainWindow):
         self.mgfFiles = {}
         self.gffFiles = {}
         self.tabs = []
+        self.resize(1000,600)
+        self.setAcceptDrops(True)
         self.show()
+        
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.accept()
+        else:
+            event.ignore()
+        
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            for files in event.mimeData().urls():
+                self.addPage(str(files.toLocalFile()))
+        else:
+            event.ignore()
         
     def addPage(self, path):
         vt = ViewerTab(self, path)
         self.tabs.append(vt)
-        self._form.tabWidget.addTab(vt, os.path.splitext(path)[0])
+        self._form.tabWidget.addTab(vt, os.path.split(path)[1])
         self._form.tabWidget.setCurrentWidget(vt)
         vt.addPage(path)
         
@@ -235,9 +255,21 @@ class ViewerTab(QWidget):
         scanTitle = item.text(0)
         self.loadScan(str(scanTitle))
         
+    def onHeaderRC(self, pos):
+        gpos = self.mapToGlobal(pos)
+        menu = QMenu()
+        menu.addAction("Group By Column")
+        ty = self.tree.pos().y()
+        gpos.setY(gpos.y()+ty)
+        selected = menu.exec_(self.mapToParent(gpos))
+#        connect(selected, SIGNAL(triggered()), this, SLOT(Group()))
+        if selected:
+            self.Group(self.tree.header().logicalIndexAt(pos))
+        
     def addPage(self, path):
         #set up our page layout
         splitter = QSplitter()
+        splitter.setChildrenCollapsible(True)
         self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
         self.vl.setObjectName('vl')
         self.vl.addWidget(splitter)
@@ -248,7 +280,10 @@ class ViewerTab(QWidget):
         splitter.addWidget(self.peptidePanel)
         splitter.addWidget(self.draw)
         self.tree = QTreeWidget()
+        #self.tree.headerItem().i
         splitter.addWidget(self.tree)
+        self.tree.header().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.header().customContextMenuRequested.connect(self.onHeaderRC)
         self.tree.itemDoubleClicked.connect(self.onClick)
         #The MS Stuff
         pepSpecType = ('gff', 'xml')
@@ -256,6 +291,7 @@ class ViewerTab(QWidget):
         if [i for i in pepSpecType if i in path]:
             self.fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
             colnames = ["Scan Title", "Peptide", "Modifications", "Charge", "Accession"]
+            self.groupBy = 1
             self.tree.setColumnCount(len(colnames))
             self.tree.setHeaderLabels(QStringList(colnames))
             self.dataType = 'pepspectra'
@@ -268,7 +304,7 @@ class ViewerTab(QWidget):
                     sid = i.getAttribute('SpectraId1')
                     if sid:
                         toAdd = [sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')]
-                        nid = toAdd[1]#group on peptide by default
+                        nid = toAdd[self.groupBy]#group on peptide by default
                         node = self.objMap.get(nid)
                         if node is None:
                             newNode = QTreeWidgetItem(QStringList(toAdd))
@@ -283,15 +319,17 @@ class ViewerTab(QWidget):
                 self.parent.pepFiles[path] = pepParser
                 for i in pepParser.getScans():
                     toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
-                    nid = toAdd[1]#group on peptide by default
+                    nid = toAdd[self.groupBy]#group on peptide by default
                     node = self.objMap.get(nid)
                     if node is None:
                         newNode = QTreeWidgetItem(QStringList(toAdd))
+                        newNode.data = toAdd
                         newNode.subnodes = []
                         self.data[newNode] = newNode
                         self.objMap[nid] = newNode
                     else:
                         newNode = QTreeWidgetItem(QStringList(toAdd))
+                        newNode.data = toAdd
                         self.data[node].subnodes.append(newNode)
         elif [i for i in specType if i in path]:
             self.fileType = 'spectra'#these are all generic more or less, so spectra works
@@ -299,11 +337,12 @@ class ViewerTab(QWidget):
             colnames = ["Scan Title", "Charge", "RT", "Precursor Mass"]
             mgf = fileIterators.mgfIterator(path, random=True)
             self.parent.mgfFiles[path] = mgf
+            self.groupBy = 0
             for i in mgf:
                 if not i:
                     continue
                 toAdd = [i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()]
-                nid = toAdd[0]#group on title by default (should be unique)
+                nid = toAdd[self.groupBy]#group on title by default (should be unique)
                 newNode = QTreeWidgetItem(QStringList(toAdd))
                 newNode.subnodes = []
                 node = self.objMap.get(nid)
@@ -322,10 +361,13 @@ class ViewerTab(QWidget):
             self.tree.addTopLevelItems(self.data.keys())
             for i in self.data:
                 i.addChildren(self.data[i].subnodes)
+        self.tree.setSortingEnabled(True)
                 
     def Group(self, col):
+        self.tree.setSortingEnabled(False)
         newData = collections.OrderedDict()
         objMap = {}
+        self.groupBy = col
         for i in self.data:
             i.subnodes.insert(0,i)
             for subnode in i.subnodes:
@@ -344,9 +386,13 @@ class ViewerTab(QWidget):
         self.objMap.clear()
         self.data = newData
         self.objMap = objMap
+        self.tree.clear()
         self.tree.addTopLevelItems(self.data.keys())
         for i in self.data:
-            i.addChildren(self.data[i])
+            sn = self.data[i].subnodes
+            if sn:
+                i.addChildren(sn)
+        self.tree.setSortingEnabled(True)
         
     def getTolerance(self):
         return float(self.draw.etolerance.text())
