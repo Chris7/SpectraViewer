@@ -280,11 +280,11 @@ class ViewerTab(QWidget):
         splitter.addWidget(self.peptidePanel)
         splitter.addWidget(self.draw)
         self.tree = QTreeWidget()
-        #self.tree.headerItem().i
         splitter.addWidget(self.tree)
         self.tree.header().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.header().customContextMenuRequested.connect(self.onHeaderRC)
         self.tree.itemDoubleClicked.connect(self.onClick)
+        
         #The MS Stuff
         pepSpecType = ('gff', 'xml')
         specType = ('mgf',)
@@ -549,76 +549,48 @@ class DrawFrame(PlotPanel):
         #draw bitmaps for labels
         height = self.toolbar.height()
         idmap = {}
-        for ion,desc in zip(('x','y','z','a','b','c'),('X ions', 'Y Ions', 'Z Ions', 'A Ions', 'B Ions', 'C Ions')):
-#            
-#            dc = QPainter()
-#            im = QImage(QSize(35,height))
-#            dc.begin(im)
-#            font = QFont()
-#            font.setPointSize(15)
-#            dc.setFont(font)
-#            dc.setPen(QColor(255,0,0))
-#            dc.drawText(QPoint(7,3), ion)
-#            dc.end()
-            self.toolbar.addAction(ion)
-            #self.toolbar.AddAction(ion, bitmap=im,shortHelp = 'Show %s'%desc)
-#            if ion is 'y' or ion is 'b':
-#                self.toolbar.ToggleTool(lid, True)
-        #a little icon to see all spectra
-#        im = QImage(QSize(30,height*3/4))
-#        dc = QPainter()
-#        dc.begin(im)
-#        dc.setFont(font)
-#        print self.toolbar.BackgroundColour
-#        dc.setBrush(self.toolbar.BackgroundColour)
-#        dc.drawRectangle(-1,-1,35,tsize)
-#        qp.setPen(QColor(105,105,105))
-#        for i in xrange(0,30,3):
-#            rn = float('%0.3f'%random.uniform(0.35,1.0))
-#            dc.drawRectangle(i,tsize*rn,2,tsize-tsize*rn)
-#        lid = wx.NewId()
-#        dc.end()
-#        self.toolbar.AddCheckLabelTool(lid, "Spectra", bitmap=im, shortHelp="Plot Entire spectra")
-#        self.Bind(wx.EVT_TOOL, self.onViewSpectra, id=lid)
-#        self.Bind(wx.EVT_TOOL, self.onXIons, id=idmap['x'])
-#        self.Bind(wx.EVT_TOOL, self.onYIons, id=idmap['y'])
-#        self.Bind(wx.EVT_TOOL, self.onZIons, id=idmap['z'])
-#        self.Bind(wx.EVT_TOOL, self.onAIons, id=idmap['a'])
-#        self.Bind(wx.EVT_TOOL, self.onBIons, id=idmap['b'])
-#        self.Bind(wx.EVT_TOOL, self.onCIons, id=idmap['c'])
+        for ion,desc,index in zip(('x','y','z','a','b','c'),('X ions', 'Y Ions', 'Z Ions', 'A Ions', 'B Ions', 'C Ions'),xrange(6)):
+            qpixmap = QPixmap(35, height)
+            qpixmap.fill(QColor(255,255,255))
+            qp = QPainter()
+            qp.begin(qpixmap)
+            if index < 3:
+                qp.setPen(QColor(0,0,255))
+            else:
+                qp.setPen(QColor(255,0,0))
+            font = QFont()
+            font.setPointSize(20)
+            qp.setFont(font)
+            qp.drawText(QPointF(0,height*3/4), ion)
+            qp.end()
+            icon = QIcon(qpixmap)
+            a = self.toolbar.addAction(icon, ion)
+            a.setToolTip('Show %s'%desc)
+            a.setCheckable(True)
+            if ion is 'y' or ion is 'b':
+                a.setChecked(True)
+        qpixmap = QPixmap(35, height)
+        qpixmap.fill(QColor(255,255,255))
+        qp = QPainter()
+        qp.begin(qpixmap)
+        for i,j in zip([1,5,7,9,10,17,20,27,35],[25,5,30,16,7,10,4,35,28]):
+            qp.drawLine(i,height,i,height-j)
+        qp.end()
+        icon = QIcon(qpixmap)
+        a = self.toolbar.addAction(icon, 'all')
+        a.setCheckable(True)
+        a.setToolTip('Show All Spectra')
+        self.toolbar.actionTriggered.connect(self.onAction)
         #error tolerance
-        self.toolbar.addAction("unmatched")
         self.etolerance = QLineEdit("0.01", self.toolbar)
         self.etolerance.setToolTip("Mass Error Tolerance (da)")
         self.toolbar.addWidget(self.etolerance)
         
-    def onViewSpectra(self, event):
-        self.ionView['all'] = event.Checked()
-        self.parent.reloadScan()
-        
-    def onXIons(self, event):
-        self.ionView['x'] = event.Checked()
-        self.parent.reloadScan()
-        
-    def onYIons(self, event):
-        self.ionView['y'] = event.Checked()
-        self.parent.reloadScan()
-        
-    def onZIons(self, event):
-        self.ionView['z'] = event.Checked()
-        self.parent.reloadScan()
-        
-    def onAIons(self, event):
-        self.ionView['a'] = event.Checked()
-        self.parent.reloadScan()
-        
-    def onBIons(self, event):
-        self.ionView['b'] = event.Checked()
-        self.parent.reloadScan()
-        
-    def onCIons(self, event):
-        self.ionView['c'] = event.Checked()
-        self.parent.reloadScan()
+    def onAction(self, action):
+        txt = str(action.iconText())
+        if txt in set(['x','y','z','a','b','c', 'all']):
+            self.ionView[txt] = action.isChecked()
+            self.parent.reloadScan()
         
     def addFlag(self, flag):
         if not self.testFlag(flag):
@@ -683,7 +655,6 @@ class DrawFrame(PlotPanel):
         self.draw()
    
     def plotXY(self, xco, yco):
-#        self.Canvas.ClearAll()
         self.x = xco
         self.y = yco
         for x,y in zip(xco,yco):
@@ -782,6 +753,3 @@ app = QApplication(sys.argv)
 w = MainWindow()
 w.addPage('A1.2012_06_07_12_20_00.t.xml')
 app.exec_()
-
-
-
