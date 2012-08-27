@@ -253,7 +253,10 @@ class ViewerTab(QWidget):
         
     def onClick(self, item, col):
         scanTitle = item.text(0)
-        self.loadScan(str(scanTitle))
+        if self.fileType == 'msf':
+            self.loadScan(str(scanTitle),peptide=item.text(1))
+        else:
+            self.loadScan(str(scanTitle))
         
     def onHeaderRC(self, pos):
         gpos = self.mapToGlobal(pos)
@@ -286,7 +289,7 @@ class ViewerTab(QWidget):
         self.tree.itemDoubleClicked.connect(self.onClick)
         
         #The MS Stuff
-        pepSpecType = ('gff', 'xml')
+        pepSpecType = ('gff', 'xml', 'msf')
         specType = ('mgf',)
         if [i for i in pepSpecType if i in path]:
             self.fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
@@ -309,15 +312,22 @@ class ViewerTab(QWidget):
                         if node is None:
                             newNode = QTreeWidgetItem(QStringList(toAdd))
                             newNode.subnodes = []
+                            newNode.data = toAdd
                             self.data[newNode] = newNode
                             self.objMap[nid] = newNode
                         else:
                             newNode = QTreeWidgetItem(QStringList(toAdd))
+                            newNode.data = toAdd
                             self.data[node].subnodes.append(newNode)
-            elif self.fileType == 'xml':
-                pepParser = fileIterators.spectraXML(path)
+            elif self.fileType == 'xml' or self.fileType == 'msf':
+                if self.fileType == 'xml':
+                    pepParser = fileIterators.spectraXML(path)
+                    iObj = pepParser.getScans()
+                elif self.fileType == 'msf':
+                    pepParser = fileIterators.ThermoMSFIterator(path)
+                    iObj = pepParser
                 self.parent.pepFiles[path] = pepParser
-                for i in pepParser.getScans():
+                for i in iObj:
                     toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
                     nid = toAdd[self.groupBy]#group on peptide by default
                     node = self.objMap.get(nid)
@@ -344,6 +354,7 @@ class ViewerTab(QWidget):
                 toAdd = [i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()]
                 nid = toAdd[self.groupBy]#group on title by default (should be unique)
                 newNode = QTreeWidgetItem(QStringList(toAdd))
+                newNode.data = toAdd
                 newNode.subnodes = []
                 node = self.objMap.get(nid)
                 if node is None:
@@ -399,21 +410,25 @@ class ViewerTab(QWidget):
         
     def reloadScan(self):
         try:
-            self.loadScan(self.title)
+            if self.fileType == 'msf':
+                self.loadScan(str(self.title),peptide=self.kwrds['peptide'])
+            else:
+                self.loadScan(self.title)
         except AttributeError:
             #no scans loaded yet
             return
         
-    def loadScan(self, title):
+    def loadScan(self, title, **kwrds):
         path = self.path
         self.title=title
+        self.kwrds = kwrds
         if self.fileType == 'gff':
 #        load a scan from a gff3 of mascot/X!Tandem output
             try:
-                it = self.gffFiles[path]
+                it = self.parent.gffFiles[path]
             except KeyError:
                 loadGFF(path)
-                it = self.gffFiles[path]
+                it = self.parent.gffFiles[path]
             gob = it.getGFF('SpectraId1',title)
             mods = gob.getAttribute('Modifications')
             fileName = titleParse.match(title).group(1)
@@ -421,17 +436,17 @@ class ViewerTab(QWidget):
                 return
             path = fileNames[fileName]
             try:
-                scan = self.mgfFiles[path].getScan(title)
+                scan = self.parent.mgfFiles[path].getScan(title)
             except KeyError:
                 mgf = fileIterators.mgfIterator(path)
-                self.mgfFiles[path] = mgf
+                self.parent.mgfFiles[path] = mgf
                 try:
                     scan = mgf.getScan(title)
                 except StopIteration:
                     scan = None
             if not scan:
                 title = gob.getAttribute('SpectraId2')
-                scan = self.mgfFiles[path].getScan(title)
+                scan = self.parent.mgfFiles[path].getScan(title)
                 if not scan:
                     return
             self.precursor = scan.getPrecursor()
@@ -449,8 +464,11 @@ class ViewerTab(QWidget):
             self.plotIons(x,y,a)
             if self.draw.ionView['all']:
                 self.draw.plotXY(x,y)
-        elif self.fileType == 'xml':
-            scan = self.parent.pepFiles[path].getScan(title)
+        elif self.fileType == 'xml' or self.fileType == 'msf':
+            if self.fileType == 'xml':
+                scan = self.parent.pepFiles[path].getScan(title)
+            elif self.fileType == 'msf':
+                scan = self.parent.pepFiles[path].getScan(title,kwrds['peptide'])
             if not scan:
                 return
             mods = scan.getModifications()
