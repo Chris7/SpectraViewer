@@ -319,22 +319,15 @@ class ViewerTab(QWidget):
                             newNode = QTreeWidgetItem(QStringList(toAdd))
                             newNode.data = toAdd
                             self.data[node].subnodes.append(newNode)
-<<<<<<< HEAD
-            elif self.fileType == 'xml':
-                pepParser = fileIterators.XTandemXML(path)
-                self.parent.pepFiles[path] = pepParser
-                for i in pepParser:
-=======
             elif self.fileType == 'xml' or self.fileType == 'msf':
                 if self.fileType == 'xml':
-                    pepParser = fileIterators.spectraXML(path)
-                    iObj = pepParser.getScans()
+                    pepParser = fileIterators.XTandemXML(path)
+                    iObj = pepParser
                 elif self.fileType == 'msf':
                     pepParser = fileIterators.ThermoMSFIterator(path)
                     iObj = pepParser
                 self.parent.pepFiles[path] = pepParser
                 for i in iObj:
->>>>>>> 7ce8ac9dafaa7567b082b1c8cee9aa67677435f6
                     toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
                     nid = toAdd[self.groupBy]#group on peptide by default
                     node = self.objMap.get(nid)

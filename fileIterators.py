@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import re, os, masses, sys
-=======
 import re, os, masses, sqlite3, StringIO, zipfile
->>>>>>> 7ce8ac9dafaa7567b082b1c8cee9aa67677435f6
 try:
     from lxml import etree
 except ImportError:
