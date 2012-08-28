@@ -315,9 +315,9 @@ class ViewerTab(QWidget):
                             newNode = QTreeWidgetItem(QStringList(toAdd))
                             self.data[node].subnodes.append(newNode)
             elif self.fileType == 'xml':
-                pepParser = fileIterators.spectraXML(path)
+                pepParser = fileIterators.XTandemXML(path)
                 self.parent.pepFiles[path] = pepParser
-                for i in pepParser.getScans():
+                for i in pepParser:
                     toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
                     nid = toAdd[self.groupBy]#group on peptide by default
                     node = self.objMap.get(nid)
@@ -752,4 +752,5 @@ class DrawFrame(PlotPanel):
 app = QApplication(sys.argv)
 w = MainWindow()
 w.addPage('A1.2012_06_07_12_20_00.t.xml')
+w.addPage('sampleMgf.mgf')
 app.exec_()

@@ -1,4 +1,4 @@
-import re, os, masses
+import re, os, masses, sys
 try:
     from lxml import etree
 except ImportError:
@@ -10,7 +10,7 @@ distillerParse = re.compile(r'_DISTILLER_RAWFILE\[(\d+)\]=\(1\)(.+)')
 
 class scanObject(object):
     """
-    A scan object to store peaklist information in
+    A scan object to store peaklist information in.  There are some getter/setter functions to keep variables similiar across file types
     """
     def __init__(self):
         self.scans = []
@@ -25,10 +25,8 @@ class scanObject(object):
     def addMass(self, mass):
         self.mass = mass
         
-    def addScan(self, scan):
-        s = scanSplitter.split(scan)
-        if len(s) > 1 and float(s[1]) != 0.0:
-            self.scans.append((float(s[0]),float(s[1])))
+    def addScan(self, mz, intensity):
+        self.scans.append((float(mz),float(intensity)))
         
     def getInfo(self):
         return self.scans
@@ -46,7 +44,7 @@ class scanObject(object):
         try:
             return self.rt
         except:
-            return None
+            return ''
         
     def getMZ(self):
         return self.scans
@@ -80,7 +78,11 @@ class peptideObject(scanObject):
         self.peptide = peptide
         
     def addModification(self, aa,position, modMass):
-        #store them like mascot
+        """
+        Modifications are represented in the mascot manner:
+        AA#Type
+        such as: M35(o) for an oxidized methionine at residue 35
+        """
         #clean up xtandem
         try:
             float(modMass)
@@ -120,89 +122,108 @@ class peptideObject(scanObject):
         return self.peptide
     
 
-class spectraXML(object):
+class XTandemXML(object):
     """
-    Basic parser -- need to make it an iterator at one point
+    Parser for X!Tandem XML Files.
     """
     def __init__(self, filename, **kwrds):
         #parse in our X!Tandem xml file
-        self.xSpec = {}
         if kwrds and kwrds['exclude']:
             exclude = set(kwrds['exclude'])
         else:
             exclude = set()
         try:
             dom1 = etree.parse(filename)
+            self.lxml = True
         except NameError:
+            self.lxml = False 
             print 'XTandem parsing unavailable: lxml is required to parse X!tandem xml files due to the namespaces employed'
             return 
-        db = None
-        for group in dom1.findall("group"):
-            subnote = list(group.iter("note"))
-            for i in subnote:
-                if (i.attrib["label"] == "Description"):
-                    experiment = i.text.strip()
-            try:
-                expect = group.attrib["expect"]
-            except KeyError:
-                continue
-            charge = group.attrib["z"]
-            premass = group.attrib["mh"]
-            rt = group.attrib["rt"]
-            proteins = list(group.iter("protein"))
-            fullProtein = ""
-            for protein in proteins:
-                scanObj = peptideObject()
-                scanObj.addCharge(charge)
-                scanObj.addMass(premass*int(charge))
-                scanObj.addRT(rt)
-                sgroup = group.iter("group")
-                for i in sgroup:
-                    #This is horridly inefficient...
-                    if "fragment ion mass spectrum" in i.attrib["label"]:
-                        ab = i.iter('{http://www.bioml.com/gaml/}Xdata')
-                        for j in ab:
-                            mzIter = j.iter('{http://www.bioml.com/gaml/}values')
-                            for k in mzIter:
+        if self.lxml:
+            self.group = dom1.findall("group")
+            self.groupMap = {}
+            self.index = 0
+        else: 
+            self.nest = 0
+        self.db = None
+        
+    def __iter__(self):
+        return self
+    
+    def parselxml(self, group):
+        subnote = list(group.iter("note"))
+        for i in subnote:
+            if (i.attrib["label"] == "Description"):
+                experiment = i.text.strip()
+        try:
+            expect = group.attrib["expect"]
+        except KeyError:
+            self.index+=1
+            self.next()
+        charge = group.attrib["z"]
+        premass = group.attrib["mh"]
+        rt = group.attrib["rt"]
+        proteins = list(group.iter("protein"))
+        fullProtein = ""
+        for protein in proteins:
+            scanObj = peptideObject()
+            scanObj.addCharge(charge)
+            scanObj.addMass(premass*int(charge))
+            scanObj.addRT(rt)
+            sgroup = group.iter("group")
+            for i in sgroup:
+                #This is horridly inefficient...
+                if "fragment ion mass spectrum" in i.attrib["label"]:
+                    ab = i.iter('{http://www.bioml.com/gaml/}Xdata')
+                    for j in ab:
+                        mzIter = j.iter('{http://www.bioml.com/gaml/}values')
+                        for k in mzIter:
 #                                print k.text
-                                mz = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
-                        ab = i.iter('{http://www.bioml.com/gaml/}Ydata')
-                        for j in ab:
-                            mzIter = j.iter('{http://www.bioml.com/gaml/}values')
-                            for k in mzIter:
+                            mz = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
+                    ab = i.iter('{http://www.bioml.com/gaml/}Ydata')
+                    for j in ab:
+                        mzIter = j.iter('{http://www.bioml.com/gaml/}values')
+                        for k in mzIter:
 #                                print k.text
-                                inten = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
-                        for j,k in zip(mz,inten):
-                            scanObj.addScan('%s %s'%(j,k))
-                domain = list(protein.iter("domain"))[0]#we only have one domain per protein instance
-                note = list(protein.iter("note"))[0]#same here
-                mods = list(protein.iter("aa"))#we can have multiple modifications
-                if not db:
-                    files = list(protein.iter("file"))
-                    db = files[0].attrib["URL"]
-                id = domain.attrib["id"]
-                start = domain.attrib["start"]
-                end = domain.attrib["end"]
-                peptide = domain.attrib["seq"]
-                pExpect = domain.attrib["expect"]
-                for mod in mods:
-                    scanObj.addModification(mod.attrib["type"],mod.attrib["at"],mod.attrib["modified"])
-                scanObj.setPeptide(peptide)
-                scanObj.setExpect(pExpect)
-                scanObj.setId(id)
-                scanObj.addTitle(id)
-                scanObj.setAccession(note.text)
-                self.xSpec[id] = scanObj
+                            inten = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
+                    for j,k in zip(mz,inten):
+                        scanObj.addScan(j,k)
+            domain = list(protein.iter("domain"))[0]#we only have one domain per protein instance
+            note = list(protein.iter("note"))[0]#same here
+            mods = list(protein.iter("aa"))#we can have multiple modifications
+            if not self.db:
+                files = list(protein.iter("file"))
+                self.db = files[0].attrib["URL"]
+            id = domain.attrib["id"]
+            start = domain.attrib["start"]
+            end = domain.attrib["end"]
+            peptide = domain.attrib["seq"]
+            pExpect = domain.attrib["expect"]
+            for mod in mods:
+                scanObj.addModification(mod.attrib["type"],mod.attrib["at"],mod.attrib["modified"])
+            scanObj.setPeptide(peptide)
+            scanObj.setExpect(pExpect)
+            scanObj.setId(id)
+            self.groupMap[id] = self.index
+            scanObj.addTitle(id)
+            scanObj.setAccession(note.text)
+        self.index+=1
+        return scanObj
+    
+    def next(self):
+        try:
+            group = self.group[self.index]
+        except IndexError:
+            raise StopIteration
+        if self.lxml:
+            return self.parselxml(group)
+        else:
+            return self.parsetext()
                 
     def getScan(self, id):
-        return self.xSpec[id]
-    
-    def getScans(self):
-        return self.xSpec.values()
+        index = self.groupMap[id]
+        return self.parselxml(self.group[index])
         
-
-#spectraXML("/home/chris/cluster/common/src/parallel_tandem_10-12-01-1/bin/NaiveCD4/_3FNaive_contSpec1/D3.2012_06_07_12_31_01.t.xml")
-
 class GFFObject(object):
     def __init__(self, infoList, filters, filterOnly,keydelim,exclude):
         seqid, source, gtype, start, end, score, strand, phase, info = infoList
@@ -228,14 +249,11 @@ class GFFObject(object):
             phase = int(phase)
         self.GFFInfo = {'seqid': seqid, 'source': source, 'gtype': gtype, 'start': int(start), 'end': int(end),
                         'score': score, 'strand': strand, 'phase': phase, 'attributes': {}}
-#        print info
         for entry in info.split(';'):
             if not entry:
                 continue
             i,v = entry.split(keydelim)
-#            print filterOnly
             if not filterOnly or (filterOnly and i.strip() in filters):
-#                print i,v
                 self.GFFInfo['attributes'][i.strip()] = v.strip().replace('"','')
         self.id = self.getAttribute('ID')
         self.parent = self.getAttribute('Parent')
@@ -449,10 +467,7 @@ class GFFParser():
             entry = row.strip().split('\t')
             if cols:
                 entry = entry[cols[0]:cols[1]]
-#            print row
-#            print entry
             ob = GFFObject(entry, filters,filterOnly,keydelim,exclude)
-#            print ob.listAttributes()
             if ob:
                 if fastAcc:
                     for i in fastAcc:
@@ -505,6 +520,7 @@ class mgfIterator(object):
         tFile = tFile[tFile.index('.')+1:]
         tFile.reverse()
         indexFile=''.join(tFile)+'.mgfi'
+        self.scanSplit = re.compile(r'[\s\t]')
         self.rand = True
         self.titleMap = {}
         self.ra = {}
@@ -582,7 +598,8 @@ class mgfIterator(object):
                 elif entry[0] == 'RTINSECONDS':
                     scanObj.addRT(entry[1])
             else:
-                scanObj.addScan(row.strip())
+                mz,intensity = self.scanSplit.split(row.strip())
+                scanObj.addScan(mz,intensity)
         if foundCharge and foundMass and foundTitle:
             return scanObj
         return None
