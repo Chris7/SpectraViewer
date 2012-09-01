@@ -1,7 +1,7 @@
 import fileIterators, operator, os, re, ConfigParser, random, matplotlib as mpl, figureIons, collections, sys
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
-import numpy as np, time
+import numpy as np, time, thread
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
@@ -41,6 +41,93 @@ def saveConfig():
     with open('spectra.cfg', 'wb') as configfile:
         config.write(configfile)
 
+class LoaderThread(QThread):
+    """
+    thread to load files
+    """
+    def __init__(self, parent, path):
+        QThread.__init__(self, parent)
+        self.parent = parent
+        self.path = path
+        self.data = {}
+        self.objMap = {}
+        self.connect(self, SIGNAL('finished()'), self.parent.threadReturn)
+        
+    def run(self):
+        path = self.path
+        pepSpecType = ('gff', 'xml', 'msf')
+        specType = ('mgf',)
+        if [i for i in pepSpecType if i in path]:
+            self.fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
+            self.colnames = ["Scan Title", "Peptide", "Modifications", "Charge", "Accession"]
+            self.groupBy = 1
+            self.dataType = 'pepspectra'
+            if self.fileType == 'gff':
+                self.iObj = fileIterators.GFFIterator(path, random=['SpectraId1', 'SpectraId2'])
+                for i in self.iObj:
+                    if not i:
+                        continue
+                    self.emit(SIGNAL('updateProgress'),self.iObj.getProgress())
+                    sid = i.getAttribute('SpectraId1')
+                    if sid:
+                        toAdd = [sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')]
+                        nid = toAdd[self.groupBy]#group on peptide by default
+                        node = self.objMap.get(nid)
+                        if node is None:
+                            newNode = QTreeWidgetItem(QStringList(toAdd))
+                            newNode.subnodes = []
+                            newNode.data = toAdd
+                            self.data[newNode] = newNode
+                            self.objMap[nid] = newNode
+                        else:
+                            newNode = QTreeWidgetItem(QStringList(toAdd))
+                            newNode.data = toAdd
+                            self.data[node].subnodes.append(newNode)
+            elif self.fileType == 'xml' or self.fileType == 'msf':
+                if self.fileType == 'xml':
+                    self.iObj = fileIterators.XTandemXML(path)
+                elif self.fileType == 'msf':
+                    self.iObj = fileIterators.ThermoMSFIterator(path)
+                for i in self.iObj:
+                    self.emit(SIGNAL('updateProgress'),self.iObj.getProgress())
+                    toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
+                    nid = toAdd[self.groupBy]#group on peptide by default
+                    node = self.objMap.get(nid)
+                    if node is None:
+                        newNode = QTreeWidgetItem(QStringList(toAdd))
+                        newNode.data = toAdd
+                        newNode.subnodes = []
+                        self.data[newNode] = newNode
+                        self.objMap[nid] = newNode
+                    else:
+                        newNode = QTreeWidgetItem(QStringList(toAdd))
+                        newNode.data = toAdd
+                        self.data[node].subnodes.append(newNode)
+        elif [i for i in specType if i in path]:
+            self.fileType = 'spectra'#these are all generic more or less, so spectra works
+            self.dataType = 'spectra'
+            self.colnames = ["Scan Title", "Charge", "RT", "Precursor Mass"]
+            self.iObj = fileIterators.mgfIterator(path, random=True)
+            self.groupBy = 0
+            for i in self.iObj:
+                if not i:
+                    continue
+                self.emit(SIGNAL('updateProgress'),self.iObj.getProgress())
+                toAdd = [i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()]
+                nid = toAdd[self.groupBy]#group on title by default (should be unique)
+                newNode = QTreeWidgetItem(QStringList(toAdd))
+                newNode.data = toAdd
+                newNode.subnodes = []
+                node = self.objMap.get(nid)
+                if node is None:
+                    self.data[newNode] = newNode
+                    self.objMap[nid] = newNode
+                else:
+                    self.data[node].subnodes.append(newNode)
+        else:
+            self.colnames = ["none"]
+            self.fileType = 'none'
+            self.dataType = 'none'
 
 class PeptidePanel(QWidget):
     def __init__(self, parent):
@@ -240,7 +327,7 @@ class MainWindow(QMainWindow):
         self.tabs.append(vt)
         self._form.tabWidget.addTab(vt, os.path.split(path)[1])
         self._form.tabWidget.setCurrentWidget(vt)
-        vt.addPage(path)
+        vt.threadPage()
         
 class ViewerTab(QWidget):
     def __init__(self, parent, path):
@@ -268,13 +355,27 @@ class ViewerTab(QWidget):
 #        connect(selected, SIGNAL(triggered()), this, SLOT(Group()))
         if selected:
             self.Group(self.tree.header().logicalIndexAt(pos))
+            
+    def threadPage(self):
+        self.progress = QProgressBar()
+        self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
+        self.vl.setObjectName('vl')
+        self.vl.addWidget(self.progress)
+        self.LoadThread = LoaderThread(self, self.path)
+        self.connect(self.LoadThread, SIGNAL('updateProgress'), self.updateProgress)
+        self.LoadThread.start()
         
-    def addPage(self, path):
+    def updateProgress(self, perc):
+        self.progress.setValue(perc)
+    
+    def threadReturn(self):
         #set up our page layout
         splitter = QSplitter()
         splitter.setChildrenCollapsible(True)
-        self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
-        self.vl.setObjectName('vl')
+        self.vl.removeWidget(self.progress)
+        self.progress.deleteLater()
+        #self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
+        #self.vl.setObjectName('vl')
         self.vl.addWidget(splitter)
         splitter.setOrientation(Qt.Vertical)
         splitter.setParent(self)
@@ -287,93 +388,27 @@ class ViewerTab(QWidget):
         self.tree.header().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.header().customContextMenuRequested.connect(self.onHeaderRC)
         self.tree.itemDoubleClicked.connect(self.onClick)
-        
-        #The MS Stuff
-        pepSpecType = ('gff', 'xml', 'msf')
-        specType = ('mgf',)
-        if [i for i in pepSpecType if i in path]:
-            self.fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
-            colnames = ["Scan Title", "Peptide", "Modifications", "Charge", "Accession"]
-            self.groupBy = 1
-            self.tree.setColumnCount(len(colnames))
-            self.tree.setHeaderLabels(QStringList(colnames))
-            self.dataType = 'pepspectra'
-            if self.fileType == 'gff':
-                gffIterator = fileIterators.GFFIterator(path, random=['SpectraId1', 'SpectraId2'])
-                self.parent.gffFiles[path] = gffIterator
-                for i in gffIterator:
-                    if not i:
-                        continue
-                    sid = i.getAttribute('SpectraId1')
-                    if sid:
-                        toAdd = [sid,i.getAttribute('Sequence'),i.getAttribute('Modifications'), i.getAttribute('Charge'), i.getAttribute('Name')]
-                        nid = toAdd[self.groupBy]#group on peptide by default
-                        node = self.objMap.get(nid)
-                        if node is None:
-                            newNode = QTreeWidgetItem(QStringList(toAdd))
-                            newNode.subnodes = []
-                            newNode.data = toAdd
-                            self.data[newNode] = newNode
-                            self.objMap[nid] = newNode
-                        else:
-                            newNode = QTreeWidgetItem(QStringList(toAdd))
-                            newNode.data = toAdd
-                            self.data[node].subnodes.append(newNode)
-            elif self.fileType == 'xml' or self.fileType == 'msf':
-                if self.fileType == 'xml':
-                    pepParser = fileIterators.XTandemXML(path)
-                    iObj = pepParser
-                elif self.fileType == 'msf':
-                    pepParser = fileIterators.ThermoMSFIterator(path)
-                    iObj = pepParser
-                self.parent.pepFiles[path] = pepParser
-                for i in iObj:
-                    toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
-                    nid = toAdd[self.groupBy]#group on peptide by default
-                    node = self.objMap.get(nid)
-                    if node is None:
-                        newNode = QTreeWidgetItem(QStringList(toAdd))
-                        newNode.data = toAdd
-                        newNode.subnodes = []
-                        self.data[newNode] = newNode
-                        self.objMap[nid] = newNode
-                    else:
-                        newNode = QTreeWidgetItem(QStringList(toAdd))
-                        newNode.data = toAdd
-                        self.data[node].subnodes.append(newNode)
-        elif [i for i in specType if i in path]:
-            self.fileType = 'spectra'#these are all generic more or less, so spectra works
-            self.dataType = 'spectra'
-            colnames = ["Scan Title", "Charge", "RT", "Precursor Mass"]
-            mgf = fileIterators.mgfIterator(path, random=True)
-            self.parent.mgfFiles[path] = mgf
-            self.groupBy = 0
-            for i in mgf:
-                if not i:
-                    continue
-                toAdd = [i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()]
-                nid = toAdd[self.groupBy]#group on title by default (should be unique)
-                newNode = QTreeWidgetItem(QStringList(toAdd))
-                newNode.data = toAdd
-                newNode.subnodes = []
-                node = self.objMap.get(nid)
-                if node is None:
-                    self.data[newNode] = newNode
-                    self.objMap[nid] = newNode
-                else:
-                    self.data[node].subnodes.append(newNode)
-        else:
-            colnames = ["none"]
-            self.fileType = 'none'
-            self.dataType = 'none'
-        self.tree.setColumnCount(len(colnames))
-        self.tree.setHeaderLabels(colnames)
+        self.dataType = self.LoadThread.dataType
+        self.fileType = self.LoadThread.fileType
+        self.groupBy = self.LoadThread.groupBy
+        iObj = self.LoadThread.iObj
+        self.colnames = self.LoadThread.colnames
+        self.objMap = self.LoadThread.objMap
+        self.data = self.LoadThread.data
+        if self.fileType == 'gff':
+            self.parent.gffFiles[self.path] = iObj
+        elif self.fileType == 'xml' or self.dataType == 'msf':
+            self.parent.pepFiles[self.path] = iObj
+        elif self.fileType == 'spectra':
+            self.parent.mgfFiles[self.path] = iObj
+        self.tree.setColumnCount(len(self.colnames))
+        self.tree.setHeaderLabels(self.colnames)
         if self.data:
             self.tree.addTopLevelItems(self.data.keys())
             for i in self.data:
                 i.addChildren(self.data[i].subnodes)
         self.tree.setSortingEnabled(True)
-                
+        
     def Group(self, col):
         self.tree.setSortingEnabled(False)
         newData = collections.OrderedDict()
@@ -468,6 +503,7 @@ class ViewerTab(QWidget):
             if self.fileType == 'xml':
                 scan = self.parent.pepFiles[path].getScan(title)
             elif self.fileType == 'msf':
+                print self.parent.pepFiles.keys()
                 scan = self.parent.pepFiles[path].getScan(title,kwrds['peptide'])
             if not scan:
                 return

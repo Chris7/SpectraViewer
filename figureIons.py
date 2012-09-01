@@ -9,8 +9,8 @@ class figureIons(object):
         if mods:
             mods = mods.split('|')
             for mod in mods:
-                modification, start, modType = modParse.search(mod).groups()
-                self.modList[int(start)] = modType.lower()
+                modification, start, mass, modType = mod.split(',')
+                self.modList[int(start)] = (mass,modType.lower())
         self.tolerance = tolerance
         
     def predictPeaks(self):
@@ -39,8 +39,8 @@ class figureIons(object):
             mass+=masses.protein_weights[v][0]
             charge+=masses.protein_weights[v][1]
             try:
-                mass+=masses.mod_weights[modList[i+1]][0]
-                charge+=masses.mod_weights[modList[i+1]][1]
+                mass+=modList[i+1][0]
+#                charge+=masses.mod_weights[modList[i+1]][1]
             except KeyError:
                 pass
             if charge>maxcharge:
@@ -87,8 +87,9 @@ class figureIons(object):
             mass+=masses.protein_weights[v][0]
             charge+=masses.protein_weights[v][1]
             try:
-                mass+=masses.mod_weights[modList[i+1]][0]
-                charge+=masses.mod_weights[modList[i+1]][1]
+                mass+=modList[i+1][0]
+#                mass+=masses.mod_weights[modList[i+1]][0]
+                #charge+=masses.mod_weights[modList[i+1]][1]
             except KeyError:
                 pass
             ionIndex = i+1
@@ -167,5 +168,3 @@ class figureIons(object):
         #now we filter our secondary ions if the primary ion is missing
         out[:] = [x for x in out if not x[5] or (x[5] and x[2:5] in primaries)]
         return out
-for i in figureIons('CHRISPEPTIDE', 1, '', 0).predictPeaks():
-    print i

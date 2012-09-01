@@ -1,4 +1,4 @@
-import re, os, masses, sqlite3, StringIO, zipfile
+import re, os, masses, sqlite3, StringIO, zipfile, time
 try:
     from lxml import etree
 except ImportError:
@@ -78,28 +78,28 @@ class peptideObject(scanObject):
     def setPeptide(self, peptide):
         self.peptide = peptide
         
-    def addModification(self, aa,position, modMass):
+    def addModification(self, aa,position, modMass, modType):
         """
-        Modifications are represented in the mascot manner:
-        AA#Type
+        Modifications are stored internally as a tuple with this format:
+        (amino acid modified, index in peptide of amino acid, modification type, modification mass)
+        ie (M, 7, Oxidation, 15.9...)
         such as: M35(o) for an oxidized methionine at residue 35
         """
         #clean up xtandem
-        try:
-            float(modMass)
-            if modMass[0] == '-':
-                modMass=modMass[1:]
+        if not modType:
+            #try to figure out what it is
+            tmass = abs(modMass)
+            smass = str(tmass)
+            prec = len(str(tmass-int(tmass)))-2
+            precFormat = '%'+'0.%df'%prec
             modType = ""
             for i in masses.mod_weights:
-                if modMass in str(masses.mod_weights[i]):
+                if tmass in masses.mod_weights[i] or smass == precFormat%masses.mod_weights[i][0]:
                     #found it
                     modType = i
             if not modType:
                 print 'mod not found',modMass
-        except ValueError:
-            #string passed, nice
-            modType = modMass
-        self.mods.add('%s%s(%s)'%(aa,position,modType))
+        self.mods.add((aa,str(position),str(modMass),str(modType)))
         
     def setExpect(self, expect):
         self.expect = expect
@@ -117,7 +117,7 @@ class peptideObject(scanObject):
         return self.acc
     
     def getModifications(self):
-        return '|'.join(self.mods)
+        return '|'.join([','.join(i) for i in self.mods])
     
     def getPeptide(self):
         return self.peptide
@@ -144,23 +144,38 @@ class XTandemXML(object):
             self.group = dom1.findall("group")
             self.groupMap = {}
             self.index = 0
-        else: 
+        else:
+            #this isn't implemented 
             self.nest = 0
+        #get our modifications
+#        self.xmods = {}
+#        iindex = len(self.group)-1
+#        while iindex>=0:
+#            ginfo = self.group[iindex]
+#            try:
+#                if ginfo.attrib['label'] == 'input parameters':
+#                    for i in ginfo.iter('note'):
+#                        if i.attrib['label'] == 'residue, modification mass':
+#                            self.xmods
+#                    break
+#            except KeyError:
+#                pass
+#            iindex-=1
         self.db = None
         
     def __iter__(self):
         return self
     
     def parselxml(self, group):
-        subnote = list(group.iter("note"))
-        for i in subnote:
-            if (i.attrib["label"] == "Description"):
-                experiment = i.text.strip()
         try:
             expect = group.attrib["expect"]
         except KeyError:
             self.index+=1
             self.next()
+        subnote = list(group.iter("note"))
+        for i in subnote:
+            if (i.attrib["label"] == "Description"):
+                experiment = i.text.strip()
         charge = group.attrib["z"]
         premass = group.attrib["mh"]
         rt = group.attrib["rt"]
@@ -201,7 +216,7 @@ class XTandemXML(object):
             peptide = domain.attrib["seq"]
             pExpect = domain.attrib["expect"]
             for mod in mods:
-                scanObj.addModification(mod.attrib["type"],mod.attrib["at"],mod.attrib["modified"])
+                scanObj.addModification(mod.attrib["type"],mod.attrib["at"],float(mod.attrib["modified"]), False)
             scanObj.setPeptide(peptide)
             scanObj.setExpect(pExpect)
             scanObj.setId(id)
@@ -224,7 +239,10 @@ class XTandemXML(object):
     def getScan(self, id):
         index = self.groupMap[id]
         return self.parselxml(self.group[index])
-        
+    
+    def getProgress(self):
+        return self.index*100/len(self.group) 
+    
 class GFFObject(object):
     def __init__(self, infoList, filters, filterOnly,keydelim,exclude):
         seqid, source, gtype, start, end, score, strand, phase, info = infoList
@@ -540,6 +558,10 @@ class mgfIterator(object):
             for row in f:
                 entry = row.strip().split('\t')
                 self.ra[entry[0]] = (int(entry[1]),int(entry[2]))
+            try:
+                self.epos = entry[2]
+            except UnboundLocalError:
+                self.epos=1
         except IOError:
             print 'building index for:',path
             if os.path.exists(path):
@@ -640,6 +662,9 @@ class mgfIterator(object):
             pos = self.f.tell()
             row = self.f.readline()
             
+    def getProgress(self):
+        return self.f.tell()*100/self.epos
+            
 class ThermoMSFIterator(object):
     def __init__(self, filename):
         if isinstance(filename,(str,unicode)):
@@ -654,12 +679,18 @@ class ThermoMSFIterator(object):
         self.fileMap = {}
         for i in self.cur.fetchall():
             self.fileMap[str(i[0])]=str(i[1])
-        sql = 'select sp.spectrum,p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL AND p.ConfidenceLevel = 1 AND p.SearchEngineRank = 1'
+        stime = time.clock()
+        sql = 'select COUNT(*) from peptides p where p.PeptideID IS NOT NULL'
+        self.nrows = self.conn.execute(sql).fetchone()[0]
+        sql = 'select sp.spectrum,p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
         try:
             self.cur.execute(sql)
         except sqlite3.OperationalError:
-            sql = 'select sp.spectrum,p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL AND p.ConfidenceLevel = 1'
+            sql = 'select COUNT(*) from peptides p where p.PeptideID IS NOT NULL'
+            self.nrows = self.conn.execute(sql).fetchone()[0]
+            sql = 'select sp.spectrum,p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
             self.cur.execute(sql)
+        self.index = 0
             
     def getScan(self, title, peptide):
         """
@@ -692,7 +723,7 @@ class ThermoMSFIterator(object):
         acc = str(i[5])
         sql = 'select aam.ModificationName,pam.Position,aam.DeltaMass from peptidesaminoacidmodifications pam left join aminoacidmodifications aam on (aam.AminoAcidModificationID=pam.AminoAcidModificationID) where pam.PeptideID=%s'%pid
         for row in self.conn.execute(sql):
-            scanObj.addModification(row[0], row[1], str(row[2]))
+            scanObj.addModification(peptide[row[1]], str(row[1]), str(row[2]), row[0])
         scanObj.setPeptide(peptide)
         scanObj.rank = searchRank
         scanObj.confidence = confidence
@@ -722,13 +753,15 @@ class ThermoMSFIterator(object):
                 scanObj.addMass(smass)
             for j in dom.findall('PeakCentroids'):
                 for k in j.findall('Peak'):
-                    scanObj.addScan('%s %s'%(k.get('X'),k.get('Y')))
+                    scanObj.addScan(k.get('X'),k.get('Y'))
         return scanObj
     
     def next(self):
         i = self.cur.fetchone()
+        self.index+=1
         while i and not i[0]:
             i = self.cur.fetchone()
+            self.index+=1
         if not i:
             raise StopIteration
         scan = self.parseScan(i)
@@ -736,6 +769,10 @@ class ThermoMSFIterator(object):
             return scan
         else:
             raise StopIteration
+        
+    def getProgress(self):
+#        print self.index,self.nrows
+        return self.index*100/self.nrows
         
 
 #f = ThermoMSFIterator('/home/chris/SampleMSF/IM_NK_IG_Velos.msf')
