@@ -88,9 +88,15 @@ class LoaderThread(QThread):
                     self.iObj = fileIterators.XTandemXML(path)
                 elif self.fileType == 'msf':
                     self.iObj = fileIterators.ThermoMSFIterator(path)
+                    self.colnames.append('Spectrum ID')
+                    self.colnames.append('Confidence Level')
+                    self.colnames.append('Search Engine Rank')
                 for i in self.iObj:
                     self.emit(SIGNAL('updateProgress'),self.iObj.getProgress())
-                    toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession()]
+                    if self.fileType == 'msf':
+                        toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),str(i.spectrumId), str(i.confidence), str(i.rank)]
+                    else:
+                        toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession()]
                     nid = toAdd[self.groupBy]#group on peptide by default
                     node = self.objMap.get(nid)
                     if node is None:
@@ -341,7 +347,7 @@ class ViewerTab(QWidget):
     def onClick(self, item, col):
         scanTitle = item.text(0)
         if self.fileType == 'msf':
-            self.loadScan(str(scanTitle),peptide=item.text(1))
+            self.loadScan(str(scanTitle),specId=item.text(5),peptide=item.text(1))
         else:
             self.loadScan(str(scanTitle))
         
@@ -360,7 +366,10 @@ class ViewerTab(QWidget):
         self.progress = QProgressBar()
         self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
         self.vl.setObjectName('vl')
-        self.vl.addWidget(self.progress)
+        self.progressText = QLabel()
+        self.progressText.setText("Loading Spectra File...MSF Files may take longer to start showing load status")
+        self.vl.addWidget(self.progressText, 0, Qt.AlignTop)
+        self.vl.addWidget(self.progress, 15)
         self.LoadThread = LoaderThread(self, self.path)
         self.connect(self.LoadThread, SIGNAL('updateProgress'), self.updateProgress)
         self.LoadThread.start()
@@ -373,7 +382,9 @@ class ViewerTab(QWidget):
         splitter = QSplitter()
         splitter.setChildrenCollapsible(True)
         self.vl.removeWidget(self.progress)
+        self.vl.removeWidget(self.progressText)
         self.progress.deleteLater()
+        self.progressText.deleteLater()
         #self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
         #self.vl.setObjectName('vl')
         self.vl.addWidget(splitter)
@@ -422,6 +433,7 @@ class ViewerTab(QWidget):
                 newNode = QTreeWidgetItem(toAdd)
                 newNode.subnodes = []
                 node = objMap.get(nid)
+                newNode.data = toAdd
                 if node is None:
                     newData[newNode] = newNode
                     objMap[nid] = newNode
@@ -446,7 +458,7 @@ class ViewerTab(QWidget):
     def reloadScan(self):
         try:
             if self.fileType == 'msf':
-                self.loadScan(str(self.title),peptide=self.kwrds['peptide'])
+                self.loadScan(str(self.title),specId=self.kwrds['specId'], peptide=self.kwrds['peptide'])
             else:
                 self.loadScan(self.title)
         except AttributeError:
@@ -503,7 +515,7 @@ class ViewerTab(QWidget):
             if self.fileType == 'xml':
                 scan = self.parent.pepFiles[path].getScan(title)
             elif self.fileType == 'msf':
-                scan = self.parent.pepFiles[path].getScan(title,kwrds['peptide'])
+                scan = self.parent.pepFiles[path].getScan(title,kwrds['specId'],kwrds['peptide'])
                 print scan
             if not scan:
                 return
