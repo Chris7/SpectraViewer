@@ -516,7 +516,6 @@ class ViewerTab(QWidget):
                 scan = self.parent.pepFiles[path].getScan(title)
             elif self.fileType == 'msf':
                 scan = self.parent.pepFiles[path].getScan(title,kwrds['specId'],kwrds['peptide'])
-                print scan
             if not scan:
                 return
             mods = scan.getModifications()
@@ -817,6 +816,6 @@ class DrawFrame(PlotPanel):
 
 app = QApplication(sys.argv)
 w = MainWindow()
-w.addPage('A1.2012_06_07_12_20_00.t.xml')
-w.addPage('sampleMgf.mgf')
+#w.addPage('A1.2012_06_07_12_20_00.t.xml')
+#w.addPage('sampleMgf.mgf')
 app.exec_()

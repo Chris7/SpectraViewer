@@ -695,7 +695,7 @@ class ThermoMSFIterator(object):
         self.modTable = {}
         for i in self.cur.fetchall():
             self.modTable[i[0]] = (i[1],i[2])
-        #We fetch all modifications here for temporary storage because it is VERY expensive to query peptide by peptide (3 seconds per 100 on my 500 MB test file)
+        #We fetch all modifications here for temporary storage because it is VERY expensive to query peptide by peptide (3 seconds per 100 on my 500 MB test file, with 300,000 scans that's horrid)
         sql = 'select pam.PeptideID, GROUP_CONCAT(pam.AminoAcidModificationID), GROUP_CONCAT(pam.Position) from peptidesaminoacidmodifications pam GROUP BY pam.PeptideID'
         self.cur.execute(sql)
         self.mods = {}
@@ -733,7 +733,12 @@ class ThermoMSFIterator(object):
 #sql = 'select GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.SearchEngineRank),GROUP_CONCAT(p.Sequence),GROUP_CONCAT(p.PeptideID), GROUP_CONCAT(pp.ProteinID), p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1 and p.SearchEngineRank = 1 GROUP BY p.SpectrumID'
         objs = []
         self.index+=1
+        added = set([])#for some reason redundant scans appear
         for confidence, searchRank, sequence, pepId, proId in zip(i[0].split(','),i[1].split(','),i[2].split(','),i[3].split(','),i[4].split(',')):
+            if (sequence,pepId,proId) in added:
+                continue
+            else:
+                added.add((sequence,pepId,proId))
             scanObj = peptideObject()
             try:
                 mods = self.mods[int(pepId)]
