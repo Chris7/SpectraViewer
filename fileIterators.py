@@ -80,6 +80,7 @@ class peptideObject(scanObject):
         
     def addModification(self, aa,position, modMass, modType):
         """
+        !!!!MODIFICATION POSITION IS 0 BASED!!!!!!
         Modifications are stored internally as a tuple with this format:
         (amino acid modified, index in peptide of amino acid, modification type, modification mass)
         ie (M, 7, Oxidation, 15.9...)
@@ -147,6 +148,7 @@ class XTandemXML(object):
         else:
             #this isn't implemented 
             self.nest = 0
+        self.startIter = True
         #get our modifications
 #        self.xmods = {}
 #        iindex = len(self.group)-1
@@ -170,6 +172,7 @@ class XTandemXML(object):
         try:
             expect = group.attrib["expect"]
         except KeyError:
+            self.group.pop(self.index)
             self.next()
         subnote = list(group.iter("note"))
         for i in subnote:
@@ -215,20 +218,22 @@ class XTandemXML(object):
             peptide = domain.attrib["seq"]
             pExpect = domain.attrib["expect"]
             for mod in mods:
-                scanObj.addModification(mod.attrib["type"],mod.attrib["at"],float(mod.attrib["modified"]), False)
+                scanObj.addModification(mod.attrib["type"],int(mod.attrib["at"])-1,float(mod.attrib["modified"]), False)
             scanObj.setPeptide(peptide)
             scanObj.setExpect(pExpect)
             scanObj.setId(id)
-            self.groupMap[id] = self.index
+            if self.startIter:
+                self.groupMap[id] = self.index
+                self.index+=1
             scanObj.addTitle(id)
             scanObj.setAccession(note.text)
-        self.index+=1
         return scanObj
     
     def next(self):
         try:
             group = self.group[self.index]
         except IndexError:
+            self.startIter = False
             raise StopIteration
         if self.lxml:
             return self.parselxml(group)
@@ -237,7 +242,10 @@ class XTandemXML(object):
                 
     def getScan(self, id):
         index = self.groupMap[id]
-        return self.parselxml(self.group[index])
+        try:
+            return self.parselxml(self.group[index])
+        except IndexError:
+            print 'wtf'
     
     def getProgress(self):
         return self.index*100/len(self.group) 
@@ -681,6 +689,18 @@ class ThermoMSFIterator(object):
         for i in self.cur.fetchall():
             self.fileMap[str(i[0])]=str(i[1])
             self.sFileMap[i[0]]=lastSplit.search(i[1]).group(1)
+        #modification table
+        sql = 'select a.AminoAcidModificationID,a.ModificationName, a.DeltaMass from aminoacidmodifications a'
+        self.cur.execute(sql)
+        self.modTable = {}
+        for i in self.cur.fetchall():
+            self.modTable[i[0]] = (i[1],i[2])
+        #We fetch all modifications here for temporary storage because it is VERY expensive to query peptide by peptide (3 seconds per 100 on my 500 MB test file)
+        sql = 'select pam.PeptideID, GROUP_CONCAT(pam.AminoAcidModificationID), GROUP_CONCAT(pam.Position) from peptidesaminoacidmodifications pam GROUP BY pam.PeptideID'
+        self.cur.execute(sql)
+        self.mods = {}
+        for i in self.cur.fetchall():
+            self.mods[i[0]] = i[1:]
         try:
             sql = 'select COUNT(distinct p.SpectrumID) from peptides p where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1 and p.SearchEngineRank = 1'
             self.nrows = self.conn.execute(sql).fetchone()[0]
@@ -715,9 +735,13 @@ class ThermoMSFIterator(object):
         self.index+=1
         for confidence, searchRank, sequence, pepId, proId in zip(i[0].split(','),i[1].split(','),i[2].split(','),i[3].split(','),i[4].split(',')):
             scanObj = peptideObject()
-    #        sql = 'select aam.ModificationName,pam.Position,aam.DeltaMass from peptidesaminoacidmodifications pam left join aminoacidmodifications aam on (aam.AminoAcidModificationID=pam.AminoAcidModificationID) where pam.PeptideID=%s'%pid
-    #        for row in self.conn.execute(sql):
-    #            scanObj.addModification(peptide[row[1]], str(row[1]), str(row[2]), row[0])
+            try:
+                mods = self.mods[int(pepId)]
+                for modId, modPosition in zip(mods[0].split(','),mods[1].split(',')):
+                    modEntry = self.modTable[int(modId)]
+                    scanObj.addModification(sequence[int(modPosition)], modPosition, modEntry[1], modEntry[0])
+            except KeyError:
+                pass
             scanObj.setPeptide(sequence)
             scanObj.rank = searchRank
             scanObj.confidence = confidence

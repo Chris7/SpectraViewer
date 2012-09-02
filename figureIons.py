@@ -29,17 +29,18 @@ class figureIons(object):
         charge=1#for starting nh3
         sLen=len(self.sequence)
         for i,v in enumerate(self.sequence):
-            ionIndex = i+1
+            ionIndex = i+1#1 based for ion reporting -- not used for internal calcs
             try:
-                if self.sequence[ionIndex] in lossMasses:
-                    for k in lossMasses[self.sequence[ionIndex]]:
+#                print i,self.sequence,self.sequence[ionIndex]
+                if v in lossMasses:
+                    for k in lossMasses[v]:
                         losses.add(k)
             except IndexError:
                 pass
             mass+=masses.protein_weights[v][0]
             charge+=masses.protein_weights[v][1]
             try:
-                mass+=modList[i+1][0]
+                mass+=float(modList[i][0])
 #                charge+=masses.mod_weights[modList[i+1]][1]
             except KeyError:
                 pass
@@ -87,7 +88,7 @@ class figureIons(object):
             mass+=masses.protein_weights[v][0]
             charge+=masses.protein_weights[v][1]
             try:
-                mass+=modList[i+1][0]
+                mass+=float(modList[i][0])
 #                mass+=masses.mod_weights[modList[i+1]][0]
                 #charge+=masses.mod_weights[modList[i+1]][1]
             except KeyError:
