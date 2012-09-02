@@ -1,4 +1,4 @@
-import re, os, masses, sqlite3, StringIO, zipfile, time, xml.etree.cElementTree
+import re, os, masses, sqlite3, StringIO, zipfile, time
 try:
     from lxml import etree
 except ImportError:

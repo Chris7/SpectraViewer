@@ -746,6 +746,8 @@ class DrawFrame(PlotPanel):
         
     def setTitle(self, title):
         self.figure.suptitle(title)
+        self.figure.axes[0].set_xlabel('M/Z')
+        self.figure.axes[0].set_ylabel('Intensity')
         
     def draw(self):
         xmax = 10
@@ -816,6 +818,6 @@ class DrawFrame(PlotPanel):
 
 app = QApplication(sys.argv)
 w = MainWindow()
-#w.addPage('A1.2012_06_07_12_20_00.t.xml')
+w.addPage('A1.2012_06_07_12_20_00.t.xml')
 #w.addPage('sampleMgf.mgf')
 app.exec_()
