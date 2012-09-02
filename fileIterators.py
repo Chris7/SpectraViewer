@@ -1,4 +1,4 @@
-import re, os, masses, sqlite3, StringIO, zipfile, time
+import re, os, masses, sqlite3, StringIO, zipfile, time, xml.etree.cElementTree
 try:
     from lxml import etree
 except ImportError:
@@ -671,24 +671,26 @@ class ThermoMSFIterator(object):
             self.f = open(filename, 'rb')
         else:
             raise Exception(TypeError,"Unknown Type of filename -- must be a file path")
-        self.conn = sqlite3.connect(filename)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = sqlite3.connect(filename, check_same_thread=False)
+        #self.conn.row_factory = sqlite3.Row
         self.cur = self.conn.cursor()
         sql = 'select * from fileinfos'
         self.cur.execute(sql)
         self.fileMap = {}
+        self.sFileMap = {}
         for i in self.cur.fetchall():
             self.fileMap[str(i[0])]=str(i[1])
+            self.sFileMap[i[0]]=lastSplit.search(i[1]).group(1)
         stime = time.clock()
-        sql = 'select COUNT(*) from peptides p where p.PeptideID IS NOT NULL'
+        sql = 'select COUNT(*) from peptides p left join peptidesproteins pp on (pp.PeptideID=p.PeptideID) where p.PeptideID IS NOT NULL'
         self.nrows = self.conn.execute(sql).fetchone()[0]
-        sql = 'select sp.spectrum,p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
+        #sql = 'select sp.spectrum,p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
+        sql = 'select p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID, pp.ProteinID, p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL'
         try:
             self.cur.execute(sql)
         except sqlite3.OperationalError:
-            sql = 'select COUNT(*) from peptides p where p.PeptideID IS NOT NULL'
-            self.nrows = self.conn.execute(sql).fetchone()[0]
-            sql = 'select sp.spectrum,p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
+            #sql = 'select sp.spectrum,p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
+            sql = 'select p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID, pp.ProteinID, p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL'
             self.cur.execute(sql)
         self.index = 0
             
@@ -696,88 +698,221 @@ class ThermoMSFIterator(object):
         """
         allows random lookup, extra calls for backwards compatibility with older versions of PD
         """
-        title = title[title.rfind('.')+1:]
-        sql = 'select sp.spectrum,p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.SpectrumID = %s and p.Sequence = \'%s\''%(title,peptide)
-        try:
-            self.cur.execute(sql)
-        except sqlite3.OperationalError:
-            sql = 'select sp.spectrum,p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.SpectrumID = %s and p.Sequence = \'%s\''%(title,peptide)
-            self.cur.execute(sql)
+        lScanPos = title.rfind('.')
+        fScanPos = title[:lScanPos].rfind('.')
+        firstScan = int(title[lScanPos+1:])
+        lastScan = int(title[fScanPos+1:lScanPos])
+        sql = "select sp.spectrum,p.Sequence, p.PeptideID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join spectrumheaders sh on (sh.UniqueSpectrumID=p.SpectrumID) where sh.FirstScan = %d and sh.LastScan = %d and p.Sequence = '%s'"%(firstScan,lastScan,peptide)
+        self.cur.execute(sql)
         i = self.cur.fetchone()
         if not i:
             return None
-        return self.parseScan(i)
+        return self.parseFullScan(i)
             
     def __iter__(self):
         return self
     
     def parseScan(self, i):
         scanObj = peptideObject()
-        sInfo = i[0]
-        fp = StringIO.StringIO(sInfo)
-        zf = zipfile.ZipFile(fp, 'r')
-        confidence = i[1]
-        searchRank = i[2]
-        peptide = str(i[3])
-        pid=i[4]
-        acc = str(i[5])
-        sql = 'select aam.ModificationName,pam.Position,aam.DeltaMass from peptidesaminoacidmodifications pam left join aminoacidmodifications aam on (aam.AminoAcidModificationID=pam.AminoAcidModificationID) where pam.PeptideID=%s'%pid
-        for row in self.conn.execute(sql):
-            scanObj.addModification(peptide[row[1]], str(row[1]), str(row[2]), row[0])
+        confidence = i[0]
+        searchRank = i[1]
+        peptide = str(i[2])
+        pid=i[3]
+        acc = str(i[4])
+#        sql = 'select aam.ModificationName,pam.Position,aam.DeltaMass from peptidesaminoacidmodifications pam left join aminoacidmodifications aam on (aam.AminoAcidModificationID=pam.AminoAcidModificationID) where pam.PeptideID=%s'%pid
+#        for row in self.conn.execute(sql):
+#            scanObj.addModification(peptide[row[1]], str(row[1]), str(row[2]), row[0])
         scanObj.setPeptide(peptide)
         scanObj.rank = searchRank
         scanObj.confidence = confidence
         scanObj.setAccession(acc)
+        scanObj.addCharge(i[6])
+        fName = self.sFileMap[i[10]]
+        fScan = i[8]
+        lScan = i[9]
+        sid = '%s.%s.%s'%(fName, fScan,lScan)
+        scanObj.addTitle(sid)
+        scanObj.setId(sid)
+        #scanObj.addMass(smass)
+#                        stage=2
+#                elif stage == 2:
+#                    if 'PeakCentroids' in row:
+#                        stage = 3
+#                elif stage == 3:
+#                    if 'Peak X' in row:
+#                        finfo = row.split('"')
+#                        scanObj.addScan(finfo[1],finfo[3])
+#                    elif 'PeakCentroids' in row:
+#                        break
+#                if peaks:
+#                    break
+#                if j.tag == 'Header':
+#                    spectrumId = j[0]
+#                    fileName = j[8][0].get('FileID')
+#                    msScanSum = j[8][0].get('MasterScanNumber')
+#                    fName = lastSplit.search(self.fileMap[fileName])
+#                    if fName:
+#                        fName = fName.group(1)
+#                    else:
+#                        fName = os.path.split(self.fileMap[fileName])[1]
+#                    sid = '%s.%s'%(fName,i[6])
+#                    scanObj.addTitle(sid)
+#                    scanObj.setId(sid)
+#                elif j.tag == 'PrecursorInfo':
+#                    charge = j.get('Charge')
+#                    smass = j.get('SinglyChargedMass')
+#                    chargedMass = j.get('InstrumentDeterminedMonoisotopicMass')
+#                    scanObj.addCharge(charge)
+#                    scanObj.addMass(smass)
+#                elif j.tag == 'PeakCentroids':
+#                    peaks = True
+#                    for k in j.findall('Peak'):
+#                        scanObj.addScan(k.get('X'),k.get('Y'))
+#            msStr[1] = '<MassSpectrum>'
+#            sIO = StringIO.StringIO('\n'.join(msStr[1:]))
+#            peaks = False
+#            for event,j in xml.etree.cElementTree.iterparse(sIO, events=("start",)):
+#                if peaks:
+#                    break
+#                if j.tag == 'Header':
+#                    spectrumId = j[0]
+#                    fileName = j[8][0].get('FileID')
+#                    msScanSum = j[8][0].get('MasterScanNumber')
+#                    fName = lastSplit.search(self.fileMap[fileName])
+#                    if fName:
+#                        fName = fName.group(1)
+#                    else:
+#                        fName = os.path.split(self.fileMap[fileName])[1]
+#                    sid = '%s.%s'%(fName,i[6])
+#                    scanObj.addTitle(sid)
+#                    scanObj.setId(sid)
+#                elif j.tag == 'PrecursorInfo':
+#                    charge = j.get('Charge')
+#                    smass = j.get('SinglyChargedMass')
+#                    chargedMass = j.get('InstrumentDeterminedMonoisotopicMass')
+#                    scanObj.addCharge(charge)
+#                    scanObj.addMass(smass)
+#                elif j.tag == 'PeakCentroids':
+#                    peaks = True
+#                    for k in j.findall('Peak'):
+#                        scanObj.addScan(k.get('X'),k.get('Y'))
+                    
+#older, slower version -- new versionn still too slow for my liking though
+#            dom = etree.fromstring('\n'.join(msStr[1:]))
+#            for j in dom.findall('Header'):
+#                spectrumId = j[0]
+#                fileName = j[8][0].get('FileID')
+#                msScanSum = j[8][0].get('MasterScanNumber')
+#                fName = lastSplit.search(self.fileMap[fileName])
+#                if fName:
+#                    fName = fName.group(1)
+#                else:
+#                    fName = os.path.split(self.fileMap[fileName])[1]
+#                sid = '%s.%s'%(fName,i[6])
+#                scanObj.addTitle(sid)
+#                scanObj.setId(sid)
+#            for j in dom.findall('PrecursorInfo'):
+#                charge = j.get('Charge')
+#                smass = j.get('SinglyChargedMass')
+#                chargedMass = j.get('InstrumentDeterminedMonoisotopicMass')
+#                scanObj.addCharge(charge)
+#                scanObj.addMass(smass)
+#            for j in dom.findall('PeakCentroids'):
+#                for k in j.findall('Peak'):
+#                    scanObj.addScan(k.get('X'),k.get('Y'))
+        return scanObj
+    
+    def parseFullScan(self, i):
+        """
+        parses scan info for giving a Spectrum Obj for plotting. takes significantly longer since it has to unzip/parse xml
+        """
+        scanObj = peptideObject()
+        sInfo = i[0]
+        fp = StringIO.StringIO(sInfo)
+        zf = zipfile.ZipFile(fp, 'r')
+        peptide = str(i[1])
+        pid=i[2]
+        sql = 'select aam.ModificationName,pam.Position,aam.DeltaMass from peptidesaminoacidmodifications pam left join aminoacidmodifications aam on (aam.AminoAcidModificationID=pam.AminoAcidModificationID) where pam.PeptideID=%s'%pid
+        for row in self.conn.execute(sql):
+            scanObj.addModification(peptide[row[1]], str(row[1]), str(row[2]), row[0])
+        scanObj.setPeptide(peptide)
         for j in zf.namelist():
             msInfo = zf.read(j)
             msStr = msInfo.split('\n') 
-            msStr[1] = '<MassSpectrum>'
-            dom = etree.fromstring('\n'.join(msStr[1:]))
-            for j in dom.findall('Header'):
-                spectrumId = j[0]
-                fileName = j[8][0].get('FileID')
-                msScanSum = j[8][0].get('MasterScanNumber')
-                fName = lastSplit.search(self.fileMap[fileName])
-                if fName:
-                    fName = fName.group(1)
-                else:
-                    fName = os.path.split(self.fileMap[fileName])[1]
-                sid = '%s.%s'%(fName,i[6])
-                scanObj.addTitle(sid)
-                scanObj.setId(sid)
-            for j in dom.findall('PrecursorInfo'):
-                charge = j.get('Charge')
-                smass = j.get('SinglyChargedMass')
-                chargedMass = j.get('InstrumentDeterminedMonoisotopicMass')
-                scanObj.addCharge(charge)
-                scanObj.addMass(smass)
-            for j in dom.findall('PeakCentroids'):
-                for k in j.findall('Peak'):
-                    scanObj.addScan(k.get('X'),k.get('Y'))
-        return scanObj
+            #sIO = StringIO.StringIO('\n'.join(msStr[1:]))
+            stage = 0
+            #this is dirty, but unfortunately the fastest method at the moment
+            for row in msStr:
+                if stage == 0:
+                    if 'FileID' in row:
+                        finfo = row.split('"')
+                        fileName = int(finfo[1])
+                        #msScanSum = finfo[5]
+                        fName = self.sFileMap[fileName]
+                        sid = '%s.%s.%s'%(fName, finfo[2],finfo[2])
+                        scanObj.addTitle(sid)
+                        scanObj.setId(sid)
+                        stage=1
+                elif stage == 1:
+                    if 'PrecursorInfo' in row:
+                        finfo = row.split('"')
+                        charge = finfo[3]
+                        smass = finfo[5]
+                        scanObj.addCharge(charge)
+                        scanObj.addMass(smass)
+                        stage=2
+                elif stage == 2:
+                    if 'PeakCentroids' in row:
+                        stage = 3
+                elif stage == 3:
+                    if 'Peak X' in row:
+                        finfo = row.split('"')
+                        scanObj.addScan(finfo[1],finfo[3])
+                    elif 'PeakCentroids' in row:
+                        break
+        if msInfo:
+            return scanObj
+        else:
+            return None
     
     def next(self):
         i = self.cur.fetchone()
         self.index+=1
-        while i and not i[0]:
-            i = self.cur.fetchone()
-            self.index+=1
         if not i:
+            self.scans = None
             raise StopIteration
         scan = self.parseScan(i)
         if scan:
             return scan
         else:
+            self.scans = None
             raise StopIteration
         
     def getProgress(self):
-#        print self.index,self.nrows
         return self.index*100/self.nrows
-        
-
-#f = ThermoMSFIterator('/home/chris/SampleMSF/IM_NK_IG_Velos.msf')
+    
+#import cProfile
+#def tProfile():
+#    f = ThermoMSFIterator(r"C:\Users\Chris\Google Drive\L477_Bart_081022A_Reverse_45.msf")
+#    for i in f:
+#        pass
+#cProfile.run("tProfile()")
+#import time
+#stime = time.clock()
+#f = ThermoMSFIterator(r"C:\Users\Chris\Desktop\IM_NK_IG_Velos.msf")
 #for i in f:
 #    pass
+#print time.clock()-stime
+
+#import sqlite3
+#stime = time.clock()
+#conn = sqlite3.connect(r"C:\Users\Chris\Desktop\IM_NK_IG_Velos.msf")
+#cur = conn.cursor()
+#sql = 'select p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID, pp.ProteinID, p.SpectrumID, sh.Charge from peptides p left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) where p.PeptideID IS NOT NULL'
+#cur.execute(sql)
+#for i in cur.fetchall():
+#    pass
+#print time.clock()-stime
 
 class indexFolder():
     def __init__(self, folder):

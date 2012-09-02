@@ -90,7 +90,7 @@ class LoaderThread(QThread):
                     self.iObj = fileIterators.ThermoMSFIterator(path)
                 for i in self.iObj:
                     self.emit(SIGNAL('updateProgress'),self.iObj.getProgress())
-                    toAdd = [i.getId(), i.getPeptide(), i.getModifications(), i.getCharge(),i.getAccession()]
+                    toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession()]
                     nid = toAdd[self.groupBy]#group on peptide by default
                     node = self.objMap.get(nid)
                     if node is None:
@@ -397,7 +397,7 @@ class ViewerTab(QWidget):
         self.data = self.LoadThread.data
         if self.fileType == 'gff':
             self.parent.gffFiles[self.path] = iObj
-        elif self.fileType == 'xml' or self.dataType == 'msf':
+        elif self.fileType == 'xml' or self.fileType == 'msf':
             self.parent.pepFiles[self.path] = iObj
         elif self.fileType == 'spectra':
             self.parent.mgfFiles[self.path] = iObj
@@ -503,8 +503,8 @@ class ViewerTab(QWidget):
             if self.fileType == 'xml':
                 scan = self.parent.pepFiles[path].getScan(title)
             elif self.fileType == 'msf':
-                print self.parent.pepFiles.keys()
                 scan = self.parent.pepFiles[path].getScan(title,kwrds['peptide'])
+                print scan
             if not scan:
                 return
             mods = scan.getModifications()
