@@ -745,6 +745,10 @@ class DrawFrame(PlotPanel):
                 continue
             mz,inten,fragType, fragNum,charge,loss,aa = i
             if self.ionView[fragType]:
+                if not self.ionView['>2'] and charge > 2:
+                    continue
+                if not self.ionView['++'] and charge == 2:
+                    continue
                 self.points.append((mz,inten,fragType, fragNum,charge,loss,aa))
         self.draw()
             
