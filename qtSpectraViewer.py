@@ -181,14 +181,18 @@ class PeptidePanel(QWidget):
         self.peptide = pep
         self.sLen = len(pep)
         self.revTypes = set([])
-        self.ions = ions
+        self.ions = [i[0] for i in ions]
+        self.errors = [i[1] for i in ions] 
         self.update()
         
     def paintEvent(self, event):
+        """
+        3/4 of left side is devoted to peptide, 1/4 of right is error measurement
+        """
         if not self.peptide:
             return
         qp = QPainter()
-        w,h = self.width(), self.height()
+        w,h = self.width()*9/10, self.height()
         qp.begin(self)
         qp.setPen(QColor(255,0,0))
         font = QFont()
@@ -250,13 +254,29 @@ class PeptidePanel(QWidget):
         lx = w/2-totalw/2
         toDraw = {}
         sLen = self.sLen
-        for entry in self.ions:
+        for entry,error in zip(self.ions,self.errors):
             fType = entry[2]
             index = entry[3]
             try:
-                toDraw[index].append(fType)
+                toDraw[index].append((fType,error))
             except KeyError:
-                toDraw[index] = [fType]
+                toDraw[index] = [(fType,error)]
+                
+        #draw our error line on the right (a black line up and down)
+        esize = self.width()/20
+        #"normalize" our error to the width so a delta of 0.0001 actually has pixels 
+        escale = esize/self.parent.getTolerance()
+        elx = self.width()-2*esize
+        ely = (self.height()*9/10)/len(self.peptide)
+        qp.drawLine(QLineF(elx,0,elx,h))
+        #draw some axes for the top
+        qp.drawLine(QLineF(elx-esize,0,elx+esize,0))
+        font.setPointSize(isize)
+        qp.setFont(font)
+        tsize = fm.size(Qt.TextSingleLine,str(self.parent.getTolerance()))
+        tw,th = tsize.width(),tsize.height()
+        qp.drawText(QPointF(elx-esize-tw,th),str(self.parent.getTolerance()))
+        qp.drawText(QPointF(elx+esize,th),str(self.parent.getTolerance()))
         for i,v in enumerate(self.peptide):
             font.setPointSize(fsize)
             qp.setFont(font)
@@ -279,10 +299,12 @@ class PeptidePanel(QWidget):
             qp.drawText(QPoint(lx+tw/2,cy+th/2+iah+ibh+ich/2),str(i+1))
             try:
                 todraw = toDraw[i+1]
-                for fragType in todraw:
+                for fragType,error in todraw:
+                    esize = error*escale
                     if fragType == 'a':
                         qp.setPen(QColor((255,0,0)))
                         ay = cy+th/2
+                        qp.drawRect(elx-esize,ely*(i+1),3,3)
                         qp.drawLine(QLineF(lx,ay,lx+tw/2,ay))
                         qp.setPen(QColor(255,0,0))
                         qp.drawText(QPoint(lx-iw/2,ay),"a")
@@ -292,17 +314,20 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx,by,lx+tw/2,by))
                         qp.setPen(QColor(255,0,0))
                         qp.drawText(QPoint(lx-iw/2,by), "b")
+                        qp.drawRect(elx-esize,ely*(i+1),3,3)
                     elif fragType == 'c':
                         cy2 = cy+th/2+iah+ibh
                         qp.setPen(QColor((255,0,0)))
                         qp.drawLine(QLineF(lx,cy2,lx+tw/2,cy2))
                         qp.setPen(QColor(255,0,0))
                         qp.drawText(QPoint(lx-iw/2,cy2), "c")
+                        qp.drawRect(elx-esize,ely*(i+1),3,3)
             except KeyError:
                 pass
             try:
                 todraw = toDraw[int(ind)]
-                for fragType in todraw:
+                for fragType,error in todraw:
+                    esize = error*escale
                     if fragType == 'x':
                         #we're x/y/z ions, we go in reverse
                         xy = cy-th/2-izh-iyh
@@ -310,6 +335,7 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx+tw,xy,lx+tw/2,xy))
                         qp.setPen(QColor(0,0,255))
                         qp.drawText(QPoint(lx+tw,xy),"x")
+                        qp.drawRect(elx-esize,ely*(i+1),3,3)
                     elif fragType == 'y':
                         #we're x/y/z ions, we go in reverse
                         yy = cy-th/2-ixh
@@ -317,6 +343,7 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx+tw,yy,lx+tw/2,yy))
                         qp.setPen(QColor(0,0,255))
                         qp.drawText(QPoint(lx+tw,yy), "y")
+                        qp.drawRect(elx-esize,ely*(i+1),3,3)
                     elif fragType == 'z':
                         #we're x/y/z ions, we go in reverse
                         zy = cy-th/2
@@ -324,6 +351,7 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx+tw,zy,lx+tw/2,zy))
                         qp.setPen(QColor(0,0,255))
                         qp.drawText(QPoint(lx+tw,zy), "z")
+                        qp.drawRect(elx-esize,ely*(i+1),3,3)
             except KeyError:
                 pass
             lx+=tw+5
@@ -624,7 +652,7 @@ class ViewerTab(QWidget):
         
     def plotIons(self, x,y,a):
         ionList = a.assignPeaks(x,y)
-        self.draw.plotIons(ionList)
+        self.draw.plotIons([i[0] for i in ionList])
         self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)
 
 
@@ -896,6 +924,6 @@ class DrawFrame(PlotPanel):
 
 app = QApplication(sys.argv)
 w = MainWindow()
-#w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
+w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
 #w.addPage('sampleMgf.mgf')
 app.exec_()

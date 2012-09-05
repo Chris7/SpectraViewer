@@ -182,8 +182,8 @@ class figureIons(object):
                 toadd = candidates[0]
                 if not toadd[5]:
                     primaries.add((toadd[2:5]))
-                out.append(candidates[0])
+                out.append((candidates[0],candidates[0][0]-mz))
         #now we filter out our secondary ions if the primary ion is missing 
         #(so we don't have a yn-h20 if we don't have a yn)
-        out[:] = [x for x in out if not x[5] or (x[5] and x[2:5] in primaries)]
+        out[:] = [x for x in out if not x[0][5] or (x[0][5] and x[0][2:5] in primaries)]
         return out
