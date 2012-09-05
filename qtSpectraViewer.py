@@ -77,7 +77,7 @@ class LoaderThread(QThread):
         
     def run(self):
         self.its = []
-        for path in self.files:
+        for fileindex,path in enumerate(self.files):
             iterObj = FileObject(path)
             self.its.append(iterObj)
             pepSpecType = ('gff', 'xml', 'msf')
@@ -100,14 +100,14 @@ class LoaderThread(QThread):
                             node = self.objMap.get(nid)
                             if node is None:
                                 newNode = QTreeWidgetItem(QStringList(toAdd))
-                                newNode.fileName = path
+                                newNode.fileName = iterObj
                                 newNode.subnodes = []
                                 newNode.data = toAdd
                                 self.data[newNode] = newNode
                                 self.objMap[nid] = newNode
                             else:
                                 newNode = QTreeWidgetItem(QStringList(toAdd))
-                                newNode.fileName = path
+                                newNode.fileName = iterObj
                                 newNode.data = toAdd
                                 self.data[node].subnodes.append(newNode)
                 elif iterObj.fileType == 'xml' or iterObj.fileType == 'msf':
@@ -128,14 +128,14 @@ class LoaderThread(QThread):
                         node = self.objMap.get(nid)
                         if node is None:
                             newNode = QTreeWidgetItem(QStringList(toAdd))
-                            newNode.fileName = path
+                            newNode.fileName = iterObj
                             newNode.data = toAdd
                             newNode.subnodes = []
                             self.data[newNode] = newNode
                             self.objMap[nid] = newNode
                         else:
                             newNode = QTreeWidgetItem(QStringList(toAdd))
-                            newNode.fileName = path
+                            newNode.fileName = iterObj
                             newNode.data = toAdd
                             self.data[node].subnodes.append(newNode)
             elif [i for i in specType if i in path]:
@@ -151,7 +151,7 @@ class LoaderThread(QThread):
                     toAdd = [i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()]
                     nid = toAdd[self.groupBy]#group on title by default (should be unique)
                     newNode = QTreeWidgetItem(QStringList(toAdd))
-                    newNode.fileName = path
+                    newNode.fileName = iterObj
                     newNode.data = toAdd
                     newNode.subnodes = []
                     node = self.objMap.get(nid)
@@ -164,6 +164,7 @@ class LoaderThread(QThread):
                 self.colnames = ["none"]
                 iterObj.fileType = 'none'
                 iterObj.dataType = 'none'
+            self.emit(SIGNAL('fileDone'),fileindex+1)
 
 class PeptidePanel(QWidget):
     def __init__(self, parent):
@@ -374,7 +375,7 @@ class MainWindow(QMainWindow):
             event.setDropAction(Qt.CopyAction)
             event.accept()
             files = [str(fileName.toLocalFile()) for fileName in event.mimeData().urls() if self.isValidFile(str(fileName.toLocalFile()))]
-            self.addPage(files)
+            self.addPage(files*10)
         else:
             event.ignore()
     
@@ -402,10 +403,10 @@ class ViewerTab(QWidget):
     def onClick(self, item, col):
         self.item = item
         scanTitle = item.text(0)
-        if self.getFileType(item.fileName) == 'msf':
-            self.loadScan(item.fileName, str(scanTitle),specId=item.text(5),peptide=item.text(1))
+        if self.getFileType(item.fileName.path) == 'msf':
+            self.loadScan(item.fileName.path, str(scanTitle),specId=item.text(5),peptide=item.text(1))
         else:
-            self.loadScan(item.fileName, str(scanTitle))
+            self.loadScan(item.fileName.path, str(scanTitle))
         
     def onHeaderRC(self, pos):
         gpos = self.mapToGlobal(pos)
@@ -424,14 +425,21 @@ class ViewerTab(QWidget):
         self.vl.setObjectName('vl')
         self.progressText = QLabel()
         self.progressText.setText("Loading Spectra File...MSF Files may take longer to start showing load status")
+        self.onFileText = QLabel()
+        self.onFileText.setText("Loading file 1 of %d"%len(self.files))
         self.vl.addWidget(self.progressText, 0, Qt.AlignTop)
+        self.vl.addWidget(self.onFileText, 0, Qt.AlignTop)
         self.vl.addWidget(self.progress, 15)
         self.LoadThread = LoaderThread(self, self.files)
         self.connect(self.LoadThread, SIGNAL('updateProgress'), self.updateProgress)
+        self.connect(self.LoadThread, SIGNAL('fileDone'), self.fileDone)
         self.LoadThread.start()
         
     def updateProgress(self, perc):
         self.progress.setValue(perc)
+        
+    def fileDone(self, i):
+        self.onFileText.setText('Loading file %d of %d'%(i+1,len(self.files)))
     
     def threadReturn(self):
         #set up our page layout
@@ -441,6 +449,7 @@ class ViewerTab(QWidget):
         self.vl.removeWidget(self.progressText)
         self.progress.deleteLater()
         self.progressText.deleteLater()
+        self.onFileText.deleteLater()
         #self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
         #self.vl.setObjectName('vl')
         self.vl.addWidget(splitter)
