@@ -30,6 +30,9 @@ searchPaths = set([])
 fileNames = {}
 titleParse = re.compile('(.+?)\.\d+\.\d+\.\d+|\w+')
 
+#filename mapping -- we keep it global to save memory
+fileMapping = {}
+
 def loadFolder(path):
     global searchPaths,fileNames
     for root,dir,files in os.walk(path):
@@ -78,6 +81,14 @@ class LoaderThread(QThread):
     def run(self):
         self.its = []
         for fileindex,path in enumerate(self.files):
+            if fileMapping.values().count(path):
+                for i in fileMapping:
+                    if fileMapping[i] == path:
+                        fileIndex = i
+                        break
+            else:
+                fileIndex = len(fileMapping)
+                fileMapping[fileIndex] = path
             iterObj = FileObject(path)
             self.its.append(iterObj)
             pepSpecType = ('gff', 'xml', 'msf')
@@ -100,14 +111,14 @@ class LoaderThread(QThread):
                             node = self.objMap.get(nid)
                             if node is None:
                                 newNode = QTreeWidgetItem(QStringList(toAdd))
-                                newNode.fileName = iterObj
+                                newNode.fileName = fileIndex
                                 newNode.subnodes = []
                                 newNode.data = toAdd
                                 self.data[newNode] = newNode
                                 self.objMap[nid] = newNode
                             else:
                                 newNode = QTreeWidgetItem(QStringList(toAdd))
-                                newNode.fileName = iterObj
+                                newNode.fileName = fileIndex
                                 newNode.data = toAdd
                                 self.data[node].subnodes.append(newNode)
                 elif iterObj.fileType == 'xml' or iterObj.fileType == 'msf':
@@ -128,14 +139,14 @@ class LoaderThread(QThread):
                         node = self.objMap.get(nid)
                         if node is None:
                             newNode = QTreeWidgetItem(QStringList(toAdd))
-                            newNode.fileName = iterObj
+                            newNode.fileName = fileIndex
                             newNode.data = toAdd
                             newNode.subnodes = []
                             self.data[newNode] = newNode
                             self.objMap[nid] = newNode
                         else:
                             newNode = QTreeWidgetItem(QStringList(toAdd))
-                            newNode.fileName = iterObj
+                            newNode.fileName = fileIndex
                             newNode.data = toAdd
                             self.data[node].subnodes.append(newNode)
             elif [i for i in specType if i in path]:
@@ -151,7 +162,7 @@ class LoaderThread(QThread):
                     toAdd = [i.getTitle(),i.getCharge(),i.getRT(), i.getPrecursor()]
                     nid = toAdd[self.groupBy]#group on title by default (should be unique)
                     newNode = QTreeWidgetItem(QStringList(toAdd))
-                    newNode.fileName = iterObj
+                    newNode.fileName = fileIndex
                     newNode.data = toAdd
                     newNode.subnodes = []
                     node = self.objMap.get(nid)
@@ -172,7 +183,16 @@ class PeptidePanel(QWidget):
         self.parent = parent
         self.peptide = ""
         self.sLen = len(self.peptide)
-        self.ions = {}
+        self.ions = []
+        self.errors = []
+        self.errorboxes = []
+        self.setMouseTracking(True)
+        
+    def mouseMoveEvent(self, event):
+        x,y = int(event.x()),int(event.y())
+        for i in self.errorboxes:
+            if i.contains(x,y):
+                QToolTip.showText(self.mapToGlobal(i.center().toPoint()), i.ion)
         
     def sizeHint(self):
         return QSize(self.width(), 100)
@@ -257,10 +277,11 @@ class PeptidePanel(QWidget):
         for entry,error in zip(self.ions,self.errors):
             fType = entry[2]
             index = entry[3]
+            idesc = '%s%d%s'%(fType,index,entry[5]) if entry[5] else '%s%d'%(fType,index)
             try:
-                toDraw[index].append((fType,error))
+                toDraw[index].append((fType,error,idesc))
             except KeyError:
-                toDraw[index] = [(fType,error)]
+                toDraw[index] = [(fType,error,idesc)]
                 
         #draw our error line on the right (a black line up and down)
         esize = self.width()/20
@@ -299,14 +320,17 @@ class PeptidePanel(QWidget):
             qp.drawText(QPoint(lx+tw/2,cy+th/2+iah+ibh+ich/2),str(i+1))
             try:
                 todraw = toDraw[i+1]
-                for fragType,error in todraw:
+                for fragType,error,errortype in todraw:
                     esize = error*escale
                     if fragType == 'a':
                         qp.setPen(QColor((255,0,0)))
                         ay = cy+th/2
-                        qp.drawRect(elx-esize,ely*(i+1),3,3)
                         qp.drawLine(QLineF(lx,ay,lx+tw/2,ay))
                         qp.setPen(QColor(255,0,0))
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
                         qp.drawText(QPoint(lx-iw/2,ay),"a")
                     elif fragType == 'b':
                         by = cy+th/2+iah
@@ -314,19 +338,25 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx,by,lx+tw/2,by))
                         qp.setPen(QColor(255,0,0))
                         qp.drawText(QPoint(lx-iw/2,by), "b")
-                        qp.drawRect(elx-esize,ely*(i+1),3,3)
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
                     elif fragType == 'c':
                         cy2 = cy+th/2+iah+ibh
                         qp.setPen(QColor((255,0,0)))
                         qp.drawLine(QLineF(lx,cy2,lx+tw/2,cy2))
                         qp.setPen(QColor(255,0,0))
                         qp.drawText(QPoint(lx-iw/2,cy2), "c")
-                        qp.drawRect(elx-esize,ely*(i+1),3,3)
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
             except KeyError:
                 pass
             try:
                 todraw = toDraw[int(ind)]
-                for fragType,error in todraw:
+                for fragType,error,errortype in todraw:
                     esize = error*escale
                     if fragType == 'x':
                         #we're x/y/z ions, we go in reverse
@@ -335,7 +365,10 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx+tw,xy,lx+tw/2,xy))
                         qp.setPen(QColor(0,0,255))
                         qp.drawText(QPoint(lx+tw,xy),"x")
-                        qp.drawRect(elx-esize,ely*(i+1),3,3)
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
                     elif fragType == 'y':
                         #we're x/y/z ions, we go in reverse
                         yy = cy-th/2-ixh
@@ -343,7 +376,10 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx+tw,yy,lx+tw/2,yy))
                         qp.setPen(QColor(0,0,255))
                         qp.drawText(QPoint(lx+tw,yy), "y")
-                        qp.drawRect(elx-esize,ely*(i+1),3,3)
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
                     elif fragType == 'z':
                         #we're x/y/z ions, we go in reverse
                         zy = cy-th/2
@@ -351,7 +387,10 @@ class PeptidePanel(QWidget):
                         qp.drawLine(QLineF(lx+tw,zy,lx+tw/2,zy))
                         qp.setPen(QColor(0,0,255))
                         qp.drawText(QPoint(lx+tw,zy), "z")
-                        qp.drawRect(elx-esize,ely*(i+1),3,3)
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
             except KeyError:
                 pass
             lx+=tw+5
@@ -403,7 +442,7 @@ class MainWindow(QMainWindow):
             event.setDropAction(Qt.CopyAction)
             event.accept()
             files = [str(fileName.toLocalFile()) for fileName in event.mimeData().urls() if self.isValidFile(str(fileName.toLocalFile()))]
-            self.addPage(files*10)
+            self.addPage(files)
         else:
             event.ignore()
     
@@ -431,10 +470,10 @@ class ViewerTab(QWidget):
     def onClick(self, item, col):
         self.item = item
         scanTitle = item.text(0)
-        if self.getFileType(item.fileName.path) == 'msf':
-            self.loadScan(item.fileName.path, str(scanTitle),specId=item.text(5),peptide=item.text(1))
+        if self.getFileType(fileMapping[item.fileName]) == 'msf':
+            self.loadScan(fileMapping[item.fileName], str(scanTitle),specId=item.text(5),peptide=item.text(1))
         else:
-            self.loadScan(item.fileName.path, str(scanTitle))
+            self.loadScan(fileMapping[item.fileName], str(scanTitle))
         
     def onHeaderRC(self, pos):
         gpos = self.mapToGlobal(pos)
