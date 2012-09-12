@@ -16,10 +16,9 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-import fileIterators, operator, os, re, ConfigParser, random, matplotlib as mpl, figureIons, collections, sys
+import fileIterators, operator, os, re, ConfigParser, random, matplotlib as mpl, figureIons, sys
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
-import numpy as np, time, thread
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
@@ -462,7 +461,7 @@ class ViewerTab(QWidget):
     def __init__(self, parent, files):
         QWidget.__init__(self)
         self.parent = parent
-        self.data = collections.OrderedDict()
+        self.data = {}#collections.OrderedDict()
         self.objMap = {}
         self.fileType = ""
         self.files = files
@@ -524,8 +523,18 @@ class ViewerTab(QWidget):
         splitter.setParent(self)
         self.peptidePanel = PeptidePanel(self)
         self.draw = DrawFrame(self)
+        self.searchBox = QLineEdit()
+        self.searchBox.editingFinished.connect(self.onSearch)
+        self.searchCols = QComboBox()
+        self.searchGroup = QWidget()
+        self.searchGroupLayout = QHBoxLayout()
+        self.searchGroupLayout.addWidget(self.searchBox)
+        self.searchGroupLayout.addWidget(self.searchCols)
+        self.searchGroup.setLayout(self.searchGroupLayout)
         splitter.addWidget(self.peptidePanel)
         splitter.addWidget(self.draw)
+        splitter.addWidget(self.searchGroup)#search box
+        
         self.tree = QTreeWidget()
         splitter.addWidget(self.tree)
         self.tree.header().setContextMenuPolicy(Qt.CustomContextMenu)
@@ -533,9 +542,11 @@ class ViewerTab(QWidget):
         self.tree.itemDoubleClicked.connect(self.onClick)
 #        self.dataType = self.LoadThread.dataType
 #        self.fileType = self.LoadThread.fileType
-#        self.groupBy = self.LoadThread.groupBy
+        self.groupBy = self.LoadThread.groupBy
         iterObjects = self.LoadThread.its
         self.colnames = self.LoadThread.colnames
+        self.searchCols.addItems(self.colnames)
+        self.searchCols.setCurrentIndex(self.groupBy)
         self.objMap = self.LoadThread.objMap
         self.data = self.LoadThread.data
         for it in iterObjects:
@@ -553,9 +564,33 @@ class ViewerTab(QWidget):
                 i.addChildren(self.data[i].subnodes)
         self.tree.setSortingEnabled(True)
         
+    def onSearch(self):
+        #what column do we search, if none -- do group by column
+        searchTerm = self.searchBox.text()
+        if not searchTerm:
+            return
+        #current index we're at
+        col = self.searchCols.currentIndex()
+        cindex = self.tree.currentItem()
+        #first we find our current index in the widgets and go from there
+        items = self.tree.findItems(searchTerm, Qt.MatchRecursive|Qt.MatchContains, column=col)
+        if not items:
+            return
+        try:
+            nindex = items.index(cindex)
+            if nindex<len(items)-1:
+                self.tree.setCurrentItem(items[nindex+1])
+            else:
+                self.tree.setCurrentItem(items[0])
+        except ValueError:
+            self.tree.setCurrentItem(items[0])
+        except IndexError:
+            #doesn't exist
+            self.tree.setCurrentItem(items[0])
+        
     def Group(self, col):
         self.tree.setSortingEnabled(False)
-        newData = collections.OrderedDict()
+        newData = {}#collections.OrderedDict()
         objMap = {}
         self.groupBy = col
         for i in self.data:
@@ -564,6 +599,7 @@ class ViewerTab(QWidget):
                 toAdd = subnode.data
                 nid = toAdd[col]#group on peptide by default
                 newNode = QTreeWidgetItem(toAdd)
+                newNode.fileName = subnode.fileName
                 newNode.subnodes = []
                 node = objMap.get(nid)
                 newNode.data = toAdd
@@ -960,7 +996,7 @@ class DrawFrame(PlotPanel):
             (x,y), xytext=(-2*20, 5), textcoords='offset points',
             bbox=self.bbox, arrowprops=self.arrowprops)
         self.canvas.draw()
-
+import numpy.linalg.lapack_lite
 app = QApplication(sys.argv)
 w = MainWindow()
 w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
