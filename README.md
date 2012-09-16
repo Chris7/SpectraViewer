@@ -25,7 +25,11 @@ GFF files - this is a feature that is currently, and probably will remain only u
 
 
 Soon to be added:
+
 dta files
+
 mzXML files
+
 some simple higher level analysis tools like box plots & venn diagrams
+
 selected spectra export
