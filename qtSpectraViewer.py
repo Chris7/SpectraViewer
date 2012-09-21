@@ -174,7 +174,7 @@ class LoaderThread(QThread):
                 self.colnames = ["none"]
                 iterObj.fileType = 'none'
                 iterObj.dataType = 'none'
-            self.emit(SIGNAL('fileDone'),fileindex+1)
+            self.emit(SIGNAL('fileDone'),fileindex,len(self.files))
 
 class PeptidePanel(QWidget):
     def __init__(self, parent):
@@ -441,9 +441,16 @@ class MainWindow(QMainWindow):
             event.setDropAction(Qt.CopyAction)
             event.accept()
             files = [str(fileName.toLocalFile()) for fileName in event.mimeData().urls() if self.isValidFile(str(fileName.toLocalFile()))]
-            self.addPage(files)
+            if (event.keyboardModifiers()&Qt.ControlModifier):
+                self.appendPage(files)
+            else:
+                self.addPage(files)
         else:
             event.ignore()
+    
+    def appendPage(self, files):
+        #get current tab
+        self._form.tabWidget.currentWidget().appendFiles(files)
     
     def addPage(self, files):
         if not self._form.tabWidget.count():
@@ -484,6 +491,18 @@ class ViewerTab(QWidget):
 #        connect(selected, SIGNAL(triggered()), this, SLOT(Group()))
         if selected:
             self.Group(self.tree.header().logicalIndexAt(pos))
+    
+    def appendFiles(self, files):
+        self.LoadThread = LoaderThread(self, files)
+        self.files+=files
+        self.LoadThread.data = self.data
+        self.LoadThread.objMap = self.objMap
+        self.progress.show()
+        self.progressText.show()
+        self.onFileText.show()
+        self.connect(self.LoadThread, SIGNAL('updateProgress'), self.updateProgress)
+        self.connect(self.LoadThread, SIGNAL('fileDone'), self.fileDone)
+        self.LoadThread.start()
             
     def threadPage(self):
         self.progress = QProgressBar()
@@ -504,23 +523,49 @@ class ViewerTab(QWidget):
     def updateProgress(self, perc):
         self.progress.setValue(perc)
         
-    def fileDone(self, i):
-        self.onFileText.setText('Loading file %d of %d'%(i+1,len(self.files)))
+    def fileDone(self, i,j):
+        self.onFileText.setText('Loading file %d of %d'%(i+1,j))
     
     def threadReturn(self):
         #set up our page layout
-        splitter = QSplitter()
-        splitter.setChildrenCollapsible(True)
+        if hasattr(self, 'splitter'):
+            iterObjects = self.LoadThread.its
+            self.data = self.LoadThread.data
+            self.objMap = self.LoadThread.objMap
+            for it in iterObjects:
+                if it.fileType == 'gff':
+                    self.parent.gffFiles[it.path] = it.iObj
+                elif it.fileType == 'xml' or it.fileType == 'msf':
+                    self.parent.pepFiles[it.path] = it.iObj
+                elif it.fileType == 'spectra':
+                    self.parent.mgfFiles[it.path] = it.iObj
+            if self.data:
+                for i in self.data.keys():
+                    if not i.treeWidget():
+                        self.tree.addTopLevelItem(i)
+                        i.addChildren(self.data[i].subnodes)
+            self.tree.setSortingEnabled(True)
+            self.onFileText.hide()
+            self.progress.hide()
+            self.progressText.hide()
+            return
+        self.splitter = QSplitter()
+        self.splitter.setChildrenCollapsible(True)
         self.vl.removeWidget(self.progress)
         self.vl.removeWidget(self.progressText)
-        self.progress.deleteLater()
-        self.progressText.deleteLater()
-        self.onFileText.deleteLater()
         #self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
         #self.vl.setObjectName('vl')
-        self.vl.addWidget(splitter)
-        splitter.setOrientation(Qt.Vertical)
-        splitter.setParent(self)
+        self.vl.addWidget(self.splitter)
+        self.progress.hide()
+        self.progressText.hide()
+        self.onFileText.hide()
+        #self.progressText.deleteLater()
+        self.vl.addWidget(self.onFileText)
+        self.vl.addWidget(self.progressText)
+        self.vl.addWidget(self.progress)
+#        self.onFileText.deleteLater()
+        self.splitter.setOrientation(Qt.Vertical)
+        self.splitter.setParent(self)
         self.peptidePanel = PeptidePanel(self)
         self.draw = DrawFrame(self)
         self.searchBox = QLineEdit()
@@ -531,12 +576,12 @@ class ViewerTab(QWidget):
         self.searchGroupLayout.addWidget(self.searchBox)
         self.searchGroupLayout.addWidget(self.searchCols)
         self.searchGroup.setLayout(self.searchGroupLayout)
-        splitter.addWidget(self.peptidePanel)
-        splitter.addWidget(self.draw)
-        splitter.addWidget(self.searchGroup)#search box
+        self.splitter.addWidget(self.peptidePanel)
+        self.splitter.addWidget(self.draw)
+        self.splitter.addWidget(self.searchGroup)#search box
         
         self.tree = QTreeWidget()
-        splitter.addWidget(self.tree)
+        self.splitter.addWidget(self.tree)
         self.tree.header().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.header().customContextMenuRequested.connect(self.onHeaderRC)
         self.tree.itemDoubleClicked.connect(self.onClick)
@@ -999,6 +1044,6 @@ class DrawFrame(PlotPanel):
 import numpy.linalg.lapack_lite
 app = QApplication(sys.argv)
 w = MainWindow()
-w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
+#w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
 #w.addPage('sampleMgf.mgf')
 app.exec_()
