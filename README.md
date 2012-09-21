@@ -5,6 +5,7 @@ A cross-platform viewer to open up mass spec peaklist files.
 
 To use, simply drag and drop a file onto the program.  Multiple tabs are provided to allow for any number of files to be open concurrently.
 Dragging multiple files into a window will open all them at once for a combined view (though they need to be the same file type at the moment.)
+Holding Control+dropping a file will append it to the current view (this way, you can even mix & match file types).
 
 The current goal is functionality -- elegance can come later.
 
@@ -27,9 +28,6 @@ GFF files - this is a feature that is currently, and probably will remain only u
 Soon to be added:
 
 dta files
-
 mzXML files
-
 some simple higher level analysis tools like box plots & venn diagrams
-
 selected spectra export
