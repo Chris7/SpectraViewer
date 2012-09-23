@@ -422,13 +422,14 @@ class MainWindow(QMainWindow):
         self.show()
         
     def isValidFile(self,name):
-        if os.path.splitext(name)[1].lower() in self.validExtensions:
+        if os.path.splitext(str(name))[1].lower() in self.validExtensions:
             return True
         return False
         
     def onOpen(self):
         fileNames = list(QFileDialog.getOpenFileNames(self, 'Select File(s) To Open'))
         files = [str(fileName) for fileName in fileNames if self.isValidFile(fileName)]
+        self.addPage(files)
         
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls:
@@ -797,8 +798,6 @@ class DrawFrame(PlotPanel):
         self.parent = parent
         PlotPanel.__init__(self, parent, **kwargs)        
         self.cleanup()
-        self.addFlag('y')
-        self.addFlag('b')
         self.ionView = {'x': False, 'y': True, 'z': False, 'a': False, 'b': True, 'c': False, 'all': False, '++': False, '>2': False}
         self.bbox = dict(boxstyle="round", fc="0.8")
         self.arrowprops = dict(
@@ -964,5 +963,5 @@ class DrawFrame(PlotPanel):
 app = QApplication(sys.argv)
 w = MainWindow()
 #w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
-#w.addPage('sampleMgf.mgf')
+#w.addPage(['sampleMgf.mgf'])
 app.exec_()
