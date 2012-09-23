@@ -488,7 +488,6 @@ class ViewerTab(QWidget):
         ty = self.tree.pos().y()
         gpos.setY(gpos.y()+ty)
         selected = menu.exec_(self.mapToParent(gpos))
-#        connect(selected, SIGNAL(triggered()), this, SLOT(Group()))
         if selected:
             self.Group(self.tree.header().logicalIndexAt(pos))
     
@@ -553,17 +552,13 @@ class ViewerTab(QWidget):
         self.splitter.setChildrenCollapsible(True)
         self.vl.removeWidget(self.progress)
         self.vl.removeWidget(self.progressText)
-        #self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
-        #self.vl.setObjectName('vl')
         self.vl.addWidget(self.splitter)
         self.progress.hide()
         self.progressText.hide()
         self.onFileText.hide()
-        #self.progressText.deleteLater()
         self.vl.addWidget(self.onFileText)
         self.vl.addWidget(self.progressText)
         self.vl.addWidget(self.progress)
-#        self.onFileText.deleteLater()
         self.splitter.setOrientation(Qt.Vertical)
         self.splitter.setParent(self)
         self.peptidePanel = PeptidePanel(self)
@@ -585,8 +580,6 @@ class ViewerTab(QWidget):
         self.tree.header().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.header().customContextMenuRequested.connect(self.onHeaderRC)
         self.tree.itemDoubleClicked.connect(self.onClick)
-#        self.dataType = self.LoadThread.dataType
-#        self.fileType = self.LoadThread.fileType
         self.groupBy = self.LoadThread.groupBy
         iterObjects = self.LoadThread.its
         self.colnames = self.LoadThread.colnames
@@ -635,7 +628,7 @@ class ViewerTab(QWidget):
         
     def Group(self, col):
         self.tree.setSortingEnabled(False)
-        newData = {}#collections.OrderedDict()
+        newData = {}
         objMap = {}
         self.groupBy = col
         for i in self.data:
@@ -682,8 +675,6 @@ class ViewerTab(QWidget):
             return os.path.splitext(path)[1][1:]
         
     def loadScan(self, fileO, title, **kwrds):
-#        print fileO,title,kwrds
-#        print self.parent.pepFiles, self.getFileType(fileO)
         path = fileO
         self.title=title
         self.kwrds = kwrds
@@ -721,7 +712,6 @@ class ViewerTab(QWidget):
             for i in mz:
                 x.append(float(i[0]))
                 y.append(float(i[1]))
-#            y = np.array(y)/np.max(y)*100
             self.pepSequence = gob.getAttribute('Sequence')
             a = figureIons.figureIons(self.pepSequence,gob.getAttribute('Charge'),mods, self.getTolerance())
             self.draw.cleanup()
@@ -744,7 +734,6 @@ class ViewerTab(QWidget):
             for i in mz:
                 x.append(float(i[0]))
                 y.append(float(i[1]))
-#            y = np.array(y)/np.max(y)*100
             self.pepSequence = scan.getPeptide()
             a = figureIons.figureIons(self.pepSequence,scan.getCharge(),mods, self.getTolerance())
             self.draw.cleanup()
@@ -796,15 +785,6 @@ class PlotPanel(QWidget):
         self.axes = self.figure.add_subplot(111)
         self.mouse = 0
 
-    def SetColor( self, rgbtuple=None ):
-        """Set figure and canvas colours to be the same."""
-        if rgbtuple is None:
-            rgbtuple = wx.SystemSettings.GetColour( wx.SYS_COLOUR_BTNFACE ).Get()
-        clr = [c/255. for c in rgbtuple]
-        self.figure.set_facecolor( clr )
-        self.figure.set_edgecolor( clr )
-        self.canvas.SetBackgroundColour( wx.Colour( *rgbtuple ) )
-        
     def onMouseDown(self, event):
         self.mouse = 1
         
@@ -879,23 +859,6 @@ class DrawFrame(PlotPanel):
             self.ionView[txt] = action.isChecked()
             self.parent.reloadScan()
         
-    def addFlag(self, flag):
-        if not self.testFlag(flag):
-            self.flag+=self.flags[flag]
-        
-    def removeFlag(self, flag):
-        if self.testFlag(flag):
-            self.flag-=self.flags[flag]
-        
-    def toggleFlag(self, flag):
-        if self.testFlag(flag):
-            self.removeFlag(flag)
-        else:
-            self.addFlag(flag)
-        
-    def testFlag(self, flag):
-        return self.flag & self.flags[flag]
-    
     def plotIons(self, peaks):
         for i in peaks:
             if not i:
@@ -907,42 +870,6 @@ class DrawFrame(PlotPanel):
                 if not self.ionView['++'] and charge == 2:
                     continue
                 self.points.append((mz,inten,fragType, fragNum,charge,loss,aa))
-        self.draw()
-            
-    
-    def _plotIons(self, ions, ionType):
-        x = []
-        y = []
-        aas = []
-        for i in ions:
-            if i == False:
-                x.append(0)
-                y.append(0)
-                aas.append(False)
-            else:
-                x.append(i[0])
-                y.append(i[1])
-                aas.append(i[2])
-        col = [0.0,0.0,0.0]
-        if ionType.lower() in set(['x','y','z']):
-            nums = [i for i in reversed(xrange(len(aas)))]
-            col = [0.0,0.0,1.0]
-        else:
-            nums = [i for i in xrange(len(aas))]
-            col = [1.0,0.0,0.0]
-        self.points.append(([x,y],ionType))
-        self.colors.append([1.0,0.0,0.0])
-        txt = []
-        for x,y,aa,ind in zip(x,y,aas,nums):
-            if not aa:
-                continue
-            self.hitMapXF[x] = (aa,y)
-            try:
-                self.hitMapX[int(x)].append((aa,y))
-            except:
-                self.hitMapX[int(x)] = [(aa,y)]
-            txt.append((x,y+2,ionType+str(ind+1),col))
-        self.text.append(txt)
         self.draw()
    
     def plotXY(self, xco, yco):
@@ -959,14 +886,6 @@ class DrawFrame(PlotPanel):
         self.points = []
         self.colors = []
         self.text = []
-        self.flags = {'y':1,
-                      'b':2,
-                      'a':4,
-                      'c':8,
-                      'x':16,
-                      'z':32,
-                      'all':64}
-        self.flag = 0
         self.hitMapX = {}
         self.hitMapXF = {}
         
@@ -1041,7 +960,7 @@ class DrawFrame(PlotPanel):
             (x,y), xytext=(-2*20, 5), textcoords='offset points',
             bbox=self.bbox, arrowprops=self.arrowprops)
         self.canvas.draw()
-import numpy.linalg.lapack_lite
+        
 app = QApplication(sys.argv)
 w = MainWindow()
 #w.addPage(['A1.2012_06_07_12_20_00.t.xml'])

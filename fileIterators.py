@@ -61,7 +61,7 @@ class scanObject(object):
     def getRT(self):
         try:
             return self.rt
-        except:
+        except AttributeError:
             return ''
         
     def getMZ(self):
@@ -75,7 +75,7 @@ class scanObject(object):
         o.write('TITLE=%s\n'%self.title)
         try:
             o.write('RTINSECONDS=%s\n'%self.rt)
-        except:
+        except AttributeError:
             pass
         o.write('PEPMASS=%s\n'%self.mass)
         o.write('CHARGE=%s\n'%self.charge)
@@ -140,7 +140,6 @@ class peptideObject(scanObject):
     def getPeptide(self):
         return self.peptide
     
-
 class XTandemXML(object):
     """
     Parser for X!Tandem XML Files.
@@ -213,13 +212,11 @@ class XTandemXML(object):
                     for j in ab:
                         mzIter = j.iter('{http://www.bioml.com/gaml/}values')
                         for k in mzIter:
-#                                print k.text
                             mz = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
                     ab = i.iter('{http://www.bioml.com/gaml/}Ydata')
                     for j in ab:
                         mzIter = j.iter('{http://www.bioml.com/gaml/}values')
                         for k in mzIter:
-#                                print k.text
                             inten = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
                     for j,k in zip(mz,inten):
                         scanObj.addScan(j,k)
@@ -673,14 +670,12 @@ class mgfIterator(object):
                 setupScan=True
 #                newScan=True
             elif 'END IONS' in row:
-                #scanObj.writeScan(open('/home/chris/test.mgf', 'wb'))
                 scan = self.parseScan(scanInfo)
                 if scan:
                     if self.rand:
                         self.ra[scan.getTitle()] = (pStart,pos)
                     return scan
                 return None
-                #newScan = False
             elif setupScan:
                 scanInfo+=row
             pos = self.f.tell()
@@ -846,29 +841,6 @@ class ThermoMSFIterator(object):
         
     def getProgress(self):
         return self.index*100/self.nrows
-    
-#import cProfile
-#def tProfile():
-#    f = ThermoMSFIterator(r"C:\Users\Chris\Google Drive\L477_Bart_081022A_Reverse_45.msf")
-#    for i in f:
-#        pass
-#cProfile.run("tProfile()")
-#import time
-#stime = time.clock()
-#f = ThermoMSFIterator(r"C:\Users\Chris\Desktop\IM_NK_IG_Velos.msf")
-#for i in f:
-#    pass
-#print time.clock()-stime
-
-#import sqlite3
-#stime = time.clock()
-#conn = sqlite3.connect(r"C:\Users\Chris\Desktop\IM_NK_IG_Velos.msf")
-#cur = conn.cursor()
-#sql = 'select p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID, pp.ProteinID, p.SpectrumID, sh.Charge from peptides p left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) where p.PeptideID IS NOT NULL'
-#cur.execute(sql)
-#for i in cur.fetchall():
-#    pass
-#print time.clock()-stime
 
 class indexFolder():
     def __init__(self, folder):
@@ -908,7 +880,6 @@ class mgfParser(object):
                 newScan=True
             elif 'END IONS' in row:
                 self.scans[title] = scanObj
-#                scanObj.writeScan(open('/home/chris/test.mgf', 'wb'))
                 newScan = False
             elif setupScan:
                 entry = row.strip().split('=')

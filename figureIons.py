@@ -17,7 +17,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 import re, masses, operator
 
-modParse = re.compile('([A-Z])(\d+)\((.+)\)')
 class figureIons(object):
     def __init__(self,seq,ioncharge,mods, tolerance):
         self.sequence=seq.upper()
@@ -48,7 +47,6 @@ class figureIons(object):
         for i,v in enumerate(self.sequence):
             ionIndex = i+1#1 based for ion reporting -- not used for internal calcs
             try:
-#                print i,self.sequence,self.sequence[ionIndex]
                 if v in lossMasses:
                     for k in lossMasses[v]:
                         losses.add(k)
@@ -66,7 +64,6 @@ class figureIons(object):
             for icharge in xrange(1,charge+1):
                 for lossType in losses:
                     lossMass = lossType[0]
-#                    print 'abc loss type',v,lossType,lossMass,i
                     tcharge = icharge
                     if 0<i<sLen-1 and not lossType[2]:
                         a = (mass-masses.mod_weights['cho'][0]+hw+hw*tcharge)/tcharge
@@ -106,7 +103,6 @@ class figureIons(object):
             charge+=masses.protein_weights[v][1]
             try:
                 mass+=float(modList[i][0])
-#                mass+=masses.mod_weights[modList[i+1]][0]
                 #charge+=masses.mod_weights[modList[i+1]][1]
             except KeyError:
                 pass
