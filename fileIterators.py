@@ -19,7 +19,8 @@ import re, os, masses, sqlite3, StringIO, zipfile, time
 try:
     from lxml import etree
 except ImportError:
-    print 'lxml is required to parse X!tandem & Thermo MSF xml files due to the namespaces employed'
+    import xml.etree.cElementTree as etree
+    #print 'lxml is required to parse X!tandem & Thermo MSF xml files due to the namespaces employed'
 
 #regex for common use
 scanSplitter = re.compile(r'[\t\s]')
