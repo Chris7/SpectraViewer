@@ -16,12 +16,11 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-import fileIterators, operator, os, re, ConfigParser, random, matplotlib as mpl, figureIons, sys
+import fileIterators, operator, os, re, ConfigParser, random, matplotlib as mpl, figureIons, sys, collections
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
-
 import SpecView
 
 #some dangerous globals for us
@@ -566,12 +565,39 @@ class ViewerTab(QWidget):
         self.draw = DrawFrame(self)
         self.searchBox = QLineEdit()
         self.searchBox.editingFinished.connect(self.onSearch)
+        #search button
+        self.sbutton = QToolButton(self.searchBox)
+        self.sicon = QPixmap('icons/search.ico')
+        self.sbutton.setIcon(QIcon(self.sicon))
+        self.sbutton.setIconSize(self.sicon.size())
+        self.sbutton.setCursor(Qt.ArrowCursor)
+        self.sbutton.setStyleSheet("border: none; padding: 0px; ");
+        self.searchBox.setStyleSheet("padding-left: %dpx;"%(int(self.sicon.width())))
         self.searchCols = QComboBox()
         self.searchGroup = QWidget()
-        self.searchGroupLayout = QHBoxLayout()
-        self.searchGroupLayout.addWidget(self.searchBox)
-        self.searchGroupLayout.addWidget(self.searchCols)
+        #filter box
+        self.filterBox = QLineEdit()
+        self.filterBox.editingFinished.connect(self.onFilter)
+        self.filterList = collections.OrderedDict()
+        self.filterBoxes = []
+        #filter button
+        self.fbutton = QToolButton(self.filterBox)
+        self.ficon = QPixmap('icons/filter.ico').scaled(self.sicon.width(), self.sicon.height())
+        self.fbutton.setIcon(QIcon(self.ficon))
+        self.fbutton.setIconSize(self.ficon.size())
+        self.fbutton.setCursor(Qt.ArrowCursor)
+        self.fbutton.setStyleSheet("border: none; padding: 0px; ");
+        self.filterBox.setStyleSheet("padding-left: %dpx;"%(int(self.ficon.width())))
+        #our close icon for filters
+        self.cicon = QPixmap('icons/close.ico')
+        self.searchGroupLayout = QGridLayout()
+        self.searchGroupLayout.addWidget(self.searchBox,0,1)
+        self.searchGroupLayout.addWidget(self.filterBox,0,2)
+        self.searchGroupLayout.addWidget(self.searchCols,0,3)
+        self.filterBoxLayout = QHBoxLayout()
+        self.searchGroupLayout.addLayout(self.filterBoxLayout,1,1,1,4,Qt.AlignLeft)
         self.searchGroup.setLayout(self.searchGroupLayout)
+        
         self.splitter.addWidget(self.peptidePanel)
         self.splitter.addWidget(self.draw)
         self.splitter.addWidget(self.searchGroup)#search box
@@ -602,6 +628,51 @@ class ViewerTab(QWidget):
             for i in self.data:
                 i.addChildren(self.data[i].subnodes)
         self.tree.setSortingEnabled(True)
+
+    def onFilter(self):
+        filterTerm = self.filterBox.text()
+        if not filterTerm:
+            return
+        col = self.searchCols.currentIndex()
+        items = set(self.tree.findItems(filterTerm,Qt.MatchRecursive|Qt.MatchContains,column=col))
+        if not items:
+            return
+        if self.filterList.has_key((filterTerm,col)):
+            return
+        self.filterList[(filterTerm,col)] = items
+        for i in self.data:
+            i.subnodes.insert(0,i)
+            for subnode in i.subnodes:
+                if not subnode.isHidden() and not subnode in items:
+                    subnode.setHidden(True)
+            i.subnodes.pop(0)
+        newFilter = QPushButton()
+        newFilter.setText('%s on %s'%(filterTerm, self.searchCols.itemText(col)))
+        newFilter.setIcon(QIcon(self.cicon))
+        newFilter.setStyleSheet("image-position: right")
+        newFilter.setLayoutDirection(Qt.RightToLeft)
+        newFilter.connect(newFilter, SIGNAL("clicked()"), lambda fbutton=newFilter,fterm=filterTerm,fcol=col: self.onFilterClick(fbutton,fterm,fcol))
+        spol = QSizePolicy(QSizePolicy.Fixed,QSizePolicy.Fixed)
+        newFilter.setSizePolicy(spol)
+        self.filterBoxes.append(newFilter)
+        self.filterBoxLayout.addWidget(newFilter)
+        
+    def onFilterClick(self, fbut,fterm,fcol):
+        fbut.deleteLater()
+        forder = []
+        index = self.filterList.keys().index((fterm,fcol))
+        for i,v in enumerate(self.filterList.values()):
+            if i!=index:
+                forder.append(set(v))
+        for i in self.data:
+            i.subnodes.insert(0,i)
+            for subnode in i.subnodes:
+                if subnode.isHidden():#it's an item that has been filtered out from a prior step
+                    for items in forder:
+                        if subnode in items:
+                            subnode.setHidden(False)
+            i.subnodes.pop(0)
+        del self.filterList[(fterm,fcol)]
         
     def onSearch(self):
         #what column do we search, if none -- do group by column
@@ -962,6 +1033,6 @@ class DrawFrame(PlotPanel):
         
 app = QApplication(sys.argv)
 w = MainWindow()
-#w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
-#w.addPage(['sampleMgf.mgf'])
+w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
+w.addPage(['sampleMgf.mgf'])
 app.exec_()
