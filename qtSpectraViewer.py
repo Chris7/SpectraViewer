@@ -628,22 +628,35 @@ class ViewerTab(QWidget):
             for i in self.data:
                 i.addChildren(self.data[i].subnodes)
         self.tree.setSortingEnabled(True)
+        
+    def recurseTree(self, itemList, item):
+        itemList.add(item)
+        for i in xrange(item.childCount()):
+            self.recurseTree(itemList, item.child(i))
 
     def onFilter(self):
+        """
+        the stored filter list contains items that were filtered out
+        """
         filterTerm = self.filterBox.text()
         if not filterTerm:
             return
         col = self.searchCols.currentIndex()
         items = set(self.tree.findItems(filterTerm,Qt.MatchRecursive|Qt.MatchContains,column=col))
-        if not items:
+        allItems = set([])
+        for i in xrange(self.tree.topLevelItemCount()):
+            self.recurseTree(allItems, self.tree.topLevelItem(i))
+        #we have all items, and we want to remove those matching our filter -- the resulting list is who to hide
+        allItems = allItems-items
+        if not allItems:
             return
         if self.filterList.has_key((filterTerm,col)):
             return
-        self.filterList[(filterTerm,col)] = items
+        self.filterList[(filterTerm,col)] = allItems
         for i in self.data:
             i.subnodes.insert(0,i)
             for subnode in i.subnodes:
-                if not subnode.isHidden() and not subnode in items:
+                if not subnode.isHidden() and subnode in allItems:
                     subnode.setHidden(True)
             i.subnodes.pop(0)
         newFilter = QPushButton()
@@ -659,18 +672,23 @@ class ViewerTab(QWidget):
         
     def onFilterClick(self, fbut,fterm,fcol):
         fbut.deleteLater()
-        forder = []
         index = self.filterList.keys().index((fterm,fcol))
+        forder = []
         for i,v in enumerate(self.filterList.values()):
             if i!=index:
-                forder.append(set(v))
+                forder.append(v)
+        #unlist forder
+        forder = set([i for sublist in forder for i in sublist])
+        #forder is now a list of items who are still hidden
         for i in self.data:
             i.subnodes.insert(0,i)
             for subnode in i.subnodes:
                 if subnode.isHidden():#it's an item that has been filtered out from a prior step
-                    for items in forder:
-                        if subnode in items:
+                    if forder:
+                        if subnode not in forder:#forder are the items we are not keeping hidden
                             subnode.setHidden(False)
+                    else:
+                        subnode.setHidden(False)
             i.subnodes.pop(0)
         del self.filterList[(fterm,fcol)]
         
@@ -1033,6 +1051,6 @@ class DrawFrame(PlotPanel):
         
 app = QApplication(sys.argv)
 w = MainWindow()
-w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
-w.addPage(['sampleMgf.mgf'])
+#w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
+#w.addPage(['sampleMgf.mgf'])
 app.exec_()
