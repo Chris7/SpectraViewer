@@ -418,6 +418,8 @@ class MainWindow(QMainWindow):
         self.filemenu.addAction(exitAction)
         self.settings = menu.addMenu('&Settings')
         self.validExtensions = set(['.xml', '.msf', '.mgf'])
+        self._form.tabWidget.setTabsClosable(True)
+        self._form.tabWidget.tabCloseRequested.connect(self.onTabClose)
         self.show()
         
     def isValidFile(self,name):
@@ -453,8 +455,8 @@ class MainWindow(QMainWindow):
         self._form.tabWidget.currentWidget().appendFiles(files)
     
     def addPage(self, files):
-        if not self._form.tabWidget.count():
-            self._form.instructions.deleteLater()
+        if not self._form.instructions.isHidden():
+            self._form.instructions.setHidden(True)
         vt = ViewerTab(self, files)
         self.tabs.append(vt)
         if len(files)>1:
@@ -464,6 +466,13 @@ class MainWindow(QMainWindow):
         self._form.tabWidget.setCurrentWidget(vt)
         vt.threadPage()
         
+    def onTabClose(self, tab):
+        self.tabs[tab].prepareDestruct()
+        self._form.tabWidget.removeTab(tab)
+        self.tabs.pop(tab)
+        if not self._form.tabWidget.count():
+            self._form.instructions.setHidden(False)
+        
 class ViewerTab(QWidget):
     def __init__(self, parent, files):
         QWidget.__init__(self)
@@ -472,6 +481,11 @@ class ViewerTab(QWidget):
         self.objMap = {}
         self.fileType = ""
         self.files = files
+        
+    def prepareDestruct(self):
+        del self.data
+        del self.objMap
+#        self.deleteLater()
         
     def onClick(self, item, col):
         self.item = item
