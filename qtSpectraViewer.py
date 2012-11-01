@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-import fileIterators, operator, os, re, ConfigParser, random, matplotlib as mpl, figureIons, sys, collections
+import fileIterators, operator, os, re, xml.etree.cElementTree as etree, random, matplotlib as mpl, figureIons, sys, collections, masses
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
 from PyQt4.QtCore import *
@@ -41,24 +41,40 @@ def loadFolder(path):
 
 def loadConfig():
     global searchPaths
-    config = ConfigParser.RawConfigParser()
-    config.read('spectra.cfg')
-    try:
-        paths = config.get('File Paths', 'pathList')
-    except ConfigParser.NoSectionError:
-        return
-    searchPaths = set(paths.split(','))
-    for i in searchPaths:
-        loadFolder(i)
+    config = etree.ElementTree(file='spectraConf.xml')
+    root = config.getroot()
+    searchPaths = root.find('GFFFilePaths').text
+    if searchPaths:
+        searchPaths = searchPaths.split(',')
+    losses = root.find('LossMasses')
+    for child in losses:
+        loss = []
+        for mass, frags, display in zip(child.findall('Mass'),child.findall('Fragments'), child.findall('Display')):
+            loss.append((float(mass.text),frags.text,display.text))
+        loss = tuple(loss)
+        masses.lossMasses[child.text] = loss
+    
     
 def saveConfig():
     global searchPaths
-    config = ConfigParser.RawConfigParser()
-    config.add_section('File Paths')
-    paths = ','.join(searchPaths)
-    config.set('File Paths', 'pathList', paths)
-    with open('spectra.cfg', 'wb') as configfile:
-        config.write(configfile)
+    root = etree.Element('SpectraViewerConfig')
+    sub = etree.SubElement(root,'GFFFilePaths')
+    if searchPaths:
+        sub.text = ','.join(searchPaths)
+    losses = etree.SubElement(root,'LossMasses')
+    for aa in masses.lossMasses:
+        info = masses.lossMasses[aa]
+        nl = etree.SubElement(losses,'AminoAcid')
+        nl.text = aa
+        for mass,fragments,display in info:
+            nm = etree.SubElement(nl,'Mass')
+            nm.text = str(mass)
+            nf = etree.SubElement(nl,'Fragments')
+            nf.text = ','.join(fragments)
+            nd = etree.SubElement(nl,'Display')
+            nd.text = display
+    elTree = etree.ElementTree(root)
+    elTree.write('spectraConf.xml', xml_declaration=True)
         
 class FileObject(object):
     def __init__(self, path):
@@ -420,7 +436,13 @@ class MainWindow(QMainWindow):
         self.validExtensions = set(['.xml', '.msf', '.mgf'])
         self._form.tabWidget.setTabsClosable(True)
         self._form.tabWidget.tabCloseRequested.connect(self.onTabClose)
+        loadConfig()
+        self.connect(self,SIGNAL('triggered()'),self.closeEvent)
         self.show()
+        
+    def closeEvent(self, event):
+        saveConfig()
+        self.destroy()
         
     def isValidFile(self,name):
         if os.path.splitext(str(name))[1].lower() in self.validExtensions:
@@ -472,6 +494,13 @@ class MainWindow(QMainWindow):
         self.tabs.pop(tab)
         if not self._form.tabWidget.count():
             self._form.instructions.setHidden(False)
+            
+class LossPanel(QWidget):
+    """
+    a panel to add neutral losses
+    """
+    def __init__(self, parent):
+        pass
         
 class ViewerTab(QWidget):
     def __init__(self, parent, files):
@@ -1065,6 +1094,6 @@ class DrawFrame(PlotPanel):
         
 app = QApplication(sys.argv)
 w = MainWindow()
-#w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
+w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
 #w.addPage(['sampleMgf.mgf'])
 app.exec_()
