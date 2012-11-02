@@ -21,7 +21,7 @@ from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
-import SpecView
+import SpecView, SettingsPanel
 
 #some dangerous globals for us
 searchPaths = set([])
@@ -152,14 +152,18 @@ class LoaderThread(QThread):
                         nid = toAdd[self.groupBy]#group on peptide by default
                         node = self.objMap.get(nid)
                         if node is None:
-                            newNode = QTreeWidgetItem(QStringList(toAdd))
+                            newNode = QTreeWidgetItem()
+                            for colI, colV in enumerate(toAdd):
+                                newNode.setText(colI,colV)
                             newNode.fileName = fileIndex
                             newNode.data = toAdd
                             newNode.subnodes = []
                             self.data[newNode] = newNode
                             self.objMap[nid] = newNode
                         else:
-                            newNode = QTreeWidgetItem(QStringList(toAdd))
+                            newNode = QTreeWidgetItem(node)
+                            for colI, colV in enumerate(toAdd):
+                                newNode.setText(colI,colV)
                             newNode.fileName = fileIndex
                             newNode.data = toAdd
                             self.data[node].subnodes.append(newNode)
@@ -430,9 +434,11 @@ class MainWindow(QMainWindow):
         exitAction.triggered.connect(qApp.quit)
         openAction = QAction('&Open', self)
         openAction.triggered.connect(self.onOpen)
+        settingsAction = QAction('&Settings', self)
+        settingsAction.triggered.connect(self.onSettings)
         self.filemenu.addAction(openAction)
+        self.filemenu.addAction(settingsAction)
         self.filemenu.addAction(exitAction)
-        self.settings = menu.addMenu('&Settings')
         self.validExtensions = set(['.xml', '.msf', '.mgf'])
         self._form.tabWidget.setTabsClosable(True)
         self._form.tabWidget.tabCloseRequested.connect(self.onTabClose)
@@ -440,9 +446,48 @@ class MainWindow(QMainWindow):
         self.connect(self,SIGNAL('triggered()'),self.closeEvent)
         self.show()
         
+
     def closeEvent(self, event):
         saveConfig()
         self.destroy()
+
+    def settingsSave(self):
+        global dError
+        txt = self.dlg.defaultError.text()
+        if txt:
+            try:
+                dError = int(txt)
+            except ValueError:
+                pass
+        
+    def addLoss(self):
+        aa = str(self.dlg.aaBox.currentText())
+        ions = []
+        if self.dlg.checkBoxa.checkState() == Qt.Checked: ions.append('a')
+        if self.dlg.checkBoxb.checkState() == Qt.Checked: ions.append('b')
+        if self.dlg.checkBoxc.checkState() == Qt.Checked: ions.append('c')
+        if self.dlg.checkBoxx.checkState() == Qt.Checked: ions.append('x')
+        if self.dlg.checkBoxy.checkState() == Qt.Checked: ions.append('y')
+        if self.dlg.checkBoxz.checkState() == Qt.Checked: ions.append('z')
+        loss = float(self.dlg.massLoss.text())
+        display = str(self.dlg.displayName.text())
+        if masses.lossMasses.has_key(aa):
+            closses = list(masses.lossMasses[aa])
+        else:
+            closses = []
+        closses.append((loss,tuple(ions),display))
+        masses.lossMasses[aa] = tuple(closses)
+        print masses.lossMasses  
+        
+        
+    def onSettings(self, args):
+        self.dtmp = QDialog()
+        self.dlg = SettingsPanel.Ui_Dialog()
+        self.dlg.setupUi(self.dtmp)
+        self.connect(self.dlg.buttonBox, SIGNAL('accepted()'),self.settingsSave)
+        self.dlg.addLoss.pressed.connect(self.addLoss)
+        self.dtmp.show()
+>>>>>>> branch 'master' of https://github.com/chrismit/SpectraViewer.git
         
     def isValidFile(self,name):
         if os.path.splitext(str(name))[1].lower() in self.validExtensions:
@@ -508,6 +553,7 @@ class ViewerTab(QWidget):
         self.parent = parent
         self.data = {}#collections.OrderedDict()
         self.objMap = {}
+        self.skipLosses = {}
         self.fileType = ""
         self.files = files
         
@@ -924,6 +970,46 @@ class PlotPanel(QWidget):
     def onMouseRelease(self, event):
         self.mouse = 0
 
+class CustomLossWidget(QWidget):
+    def __init__(self, parent):
+        QWidget.__init__(self)
+        self.parent = parent#parent is reference to viewertab
+        self.layout = QGridLayout()
+        self.setLayout(self.layout)
+        self.setWindowFlags(Qt.Popup)
+        mpos = QCursor().pos()
+        self.move(mpos.x(),mpos.y())
+        index=0
+        self.enabled = []
+        def makeCallback(ind,ami,l):
+            return lambda: self.onToggle(ind,ami,l)
+        for aa in masses.lossMasses:
+            for loss in masses.lossMasses[aa]:
+                self.enabled.append(QCheckBox())
+                self.enabled[index].stateChanged.connect(makeCallback(index,aa,loss))
+                if self.parent.skipLosses.has_key(aa) and self.parent.skipLosses[aa].count(loss):
+                    self.enabled[index].setChecked(True)
+                label = QLabel('%s:%s'%(aa,loss[0]))
+                display = QLabel('%s'%loss[2])
+                self.layout.addWidget(self.enabled[index],index,0)
+                self.layout.addWidget(label,index,1)
+                self.layout.addWidget(display,index,2)
+                index+=1
+        self.show()
+        
+    def onToggle(self, index,aa,loss):
+        obj = self.enabled[index]
+        if obj.isChecked():
+            try:
+                self.parent.skipLosses[aa].add(loss)
+            except KeyError:
+                self.parent.skipLosses[aa] = set([loss])
+        else:
+            self.parent.skipLosses[aa].discard(loss)
+        self.parent.skipLosses
+            
+    def leaveEvent(self, event):
+        self.deleteLater()
 
 class DrawFrame(PlotPanel):
     def __init__(self, parent, *args,**kwargs):
@@ -942,6 +1028,9 @@ class DrawFrame(PlotPanel):
         #toolbar stuff
         #draw bitmaps for labels
         height = self.toolbar.height()
+        self.lossButton = QPushButton('Neutral Losses')
+        self.lossButton.pressed.connect(self.customLosses)
+        self.toolbar.addWidget(self.lossButton)
         idmap = {}
         for ion,desc,index in zip(('x','y','z','a','b','c', '++', '>2'),('X ions', 'Y Ions', 'Z Ions', 'A Ions', 'B Ions', 'C Ions', 'Doubly Charged Ions', 'All Possible Fragments'),xrange(8)):
             qpixmap = QPixmap(35, height)
@@ -980,6 +1069,9 @@ class DrawFrame(PlotPanel):
         self.etolerance.setToolTip("Mass Error Tolerance (da)")
         self.etolerance.editingFinished.connect(self.onToleranceEdit)
         self.toolbar.addWidget(self.etolerance)
+        
+    def customLosses(self):
+        self.lossWidget = CustomLossWidget(self.parent)
         
     def onToleranceEdit(self):
         self.parent.reloadScan()
