@@ -15,10 +15,10 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
-import re, masses, operator
+import re, masses, operator, copy
 
 class figureIons(object):
-    def __init__(self,seq,ioncharge,mods, tolerance):
+    def __init__(self,seq,ioncharge,mods, tolerance, skipLoss=None):
         self.sequence=seq.upper()
         self.ioncharge = ioncharge
         self.modList = {}
@@ -28,6 +28,7 @@ class figureIons(object):
                 modification, start, mass, modType = mod.split(',')
                 self.modList[int(start)] = (mass,modType.lower())
         self.tolerance = tolerance
+        self.skipLoss=skipLoss
         
     def predictPeaks(self):
         """
@@ -41,7 +42,13 @@ class figureIons(object):
         maxcharge = int(self.ioncharge)
         hw = masses.mod_weights['h'][0]
         losses = set([(0,('a','b','c','x','y','z'),'')])
-        lossMasses = masses.lossMasses
+        lossMasses = copy.deepcopy(masses.lossMasses)
+        if self.skipLoss:
+            for aa in self.skipLoss:
+                lossMasses[aa] = list(lossMasses[aa])
+                for info in self.skipLoss[aa]:
+                    lossMasses[aa].remove(info)
+                lossMasses[aa] = tuple(lossMasses[aa])
         charge=1#for starting nh3
         sLen=len(self.sequence)
         for i,v in enumerate(self.sequence):
