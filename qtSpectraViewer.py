@@ -41,7 +41,10 @@ def loadFolder(path):
 
 def loadConfig():
     global searchPaths
-    config = etree.ElementTree(file='spectraConf.xml')
+    try:
+        config = etree.ElementTree(file='spectraConf.xml')
+    except IOError:#doesn't exist
+        return
     root = config.getroot()
     searchPaths = root.find('GFFFilePaths').text
     if searchPaths:
@@ -50,7 +53,7 @@ def loadConfig():
     for child in losses:
         loss = []
         for mass, frags, display in zip(child.findall('Mass'),child.findall('Fragments'), child.findall('Display')):
-            loss.append((float(mass.text),frags.text,display.text))
+            loss.append((float(mass.text),frags.text.split(','),display.text))
         loss = tuple(loss)
         masses.lossMasses[child.text] = loss
     
@@ -476,8 +479,7 @@ class MainWindow(QMainWindow):
         else:
             closses = []
         closses.append((loss,tuple(ions),display))
-        masses.lossMasses[aa] = tuple(closses)
-        print masses.lossMasses  
+        masses.lossMasses[aa] = tuple(closses)  
         
         
     def onSettings(self, args):
@@ -487,7 +489,6 @@ class MainWindow(QMainWindow):
         self.connect(self.dlg.buttonBox, SIGNAL('accepted()'),self.settingsSave)
         self.dlg.addLoss.pressed.connect(self.addLoss)
         self.dtmp.show()
->>>>>>> branch 'master' of https://github.com/chrismit/SpectraViewer.git
         
     def isValidFile(self,name):
         if os.path.splitext(str(name))[1].lower() in self.validExtensions:
@@ -892,7 +893,7 @@ class ViewerTab(QWidget):
                 x.append(float(i[0]))
                 y.append(float(i[1]))
             self.pepSequence = gob.getAttribute('Sequence')
-            a = figureIons.figureIons(self.pepSequence,gob.getAttribute('Charge'),mods, self.getTolerance())
+            a = figureIons.figureIons(self.pepSequence,gob.getAttribute('Charge'),mods, self.getTolerance(),skipLoss=self.skipLosses)
             self.draw.cleanup()
             self.draw.setTitle(title)
             self.plotIons(x,y,a)
@@ -987,7 +988,7 @@ class CustomLossWidget(QWidget):
             for loss in masses.lossMasses[aa]:
                 self.enabled.append(QCheckBox())
                 self.enabled[index].stateChanged.connect(makeCallback(index,aa,loss))
-                if self.parent.skipLosses.has_key(aa) and self.parent.skipLosses[aa].count(loss):
+                if not self.parent.skipLosses.has_key(aa) or not loss in self.parent.skipLosses[aa]:
                     self.enabled[index].setChecked(True)
                 label = QLabel('%s:%s'%(aa,loss[0]))
                 display = QLabel('%s'%loss[2])
@@ -1000,13 +1001,16 @@ class CustomLossWidget(QWidget):
     def onToggle(self, index,aa,loss):
         obj = self.enabled[index]
         if obj.isChecked():
+            if self.parent.skipLosses.has_key(aa):
+                self.parent.skipLosses[aa].discard(loss)
+                self.parent.reloadScan()
+        else:
             try:
                 self.parent.skipLosses[aa].add(loss)
             except KeyError:
                 self.parent.skipLosses[aa] = set([loss])
-        else:
-            self.parent.skipLosses[aa].discard(loss)
-        self.parent.skipLosses
+            self.parent.reloadScan()
+        print self.parent.skipLosses
             
     def leaveEvent(self, event):
         self.deleteLater()
@@ -1071,7 +1075,7 @@ class DrawFrame(PlotPanel):
         self.toolbar.addWidget(self.etolerance)
         
     def customLosses(self):
-        self.lossWidget = CustomLossWidget(self.parent)
+        CustomLossWidget(self.parent)
         
     def onToleranceEdit(self):
         self.parent.reloadScan()
