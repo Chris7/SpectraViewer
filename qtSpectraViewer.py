@@ -970,6 +970,7 @@ class PlotPanel(QWidget):
         self.canvas.mpl_connect('button_press_event', self.onMouseDown)
         self.canvas.mpl_connect('button_release_event', self.onMouseRelease)
         self.toolbar = NavigationToolbar(self.canvas, self)
+        self.toolbar.coordinates = None
         self.vbox = QVBoxLayout(self)
         self.peptidePanel = self.parent.peptidePanel
         self.vbox.addWidget(self.toolbar)
@@ -1027,6 +1028,7 @@ class CustomLossWidget(QWidget):
             
     def leaveEvent(self, event):
         self.deleteLater()
+        self.destroy()
 
 class DrawFrame(PlotPanel):
     def __init__(self, parent, *args,**kwargs):
@@ -1045,7 +1047,7 @@ class DrawFrame(PlotPanel):
         #toolbar stuff
         #draw bitmaps for labels
         height = self.toolbar.height()
-        self.lossButton = QPushButton('Neutral Losses')
+        self.lossButton = QPushButton('Losses')
         self.lossButton.pressed.connect(self.customLosses)
         self.toolbar.addWidget(self.lossButton)
         idmap = {}
