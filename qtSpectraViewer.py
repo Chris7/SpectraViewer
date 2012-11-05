@@ -53,7 +53,8 @@ def loadConfig():
     for child in losses:
         loss = []
         for mass, frags, display in zip(child.findall('Mass'),child.findall('Fragments'), child.findall('Display')):
-            loss.append((float(mass.text),frags.text.split(','),display.text))
+            if mass.text and frags.text and display.text:
+                loss.append((float(mass.text),tuple(frags.text.split(',')),display.text))
         loss = tuple(loss)
         masses.lossMasses[child.text] = loss
     
@@ -108,7 +109,7 @@ class LoaderThread(QThread):
                 fileMapping[fileIndex] = path
             iterObj = FileObject(path)
             self.its.append(iterObj)
-            pepSpecType = ('gff', 'xml', 'msf')
+            pepSpecType = ('gff', 'xml', 'msf', 'dat')
             specType = ('mgf',)
             if [i for i in pepSpecType if i in path]:
                 iterObj.fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
@@ -138,9 +139,13 @@ class LoaderThread(QThread):
                                 newNode.fileName = fileIndex
                                 newNode.data = toAdd
                                 self.data[node].subnodes.append(newNode)
-                elif iterObj.fileType == 'xml' or iterObj.fileType == 'msf':
+                elif iterObj.fileType == 'xml' or iterObj.fileType == 'msf' or iterObj.fileType == 'dat':
                     if iterObj.fileType == 'xml':
                         iterObj.iObj = fileIterators.XTandemXML(path)
+                    elif iterObj.fileType == 'dat':
+                        iterObj.iObj = fileIterators.MascotDATIterator(path)
+                        self.colnames.append('Hit Id')
+                        self.colnames.append('Rank')
                     elif iterObj.fileType == 'msf':
                         iterObj.iObj = fileIterators.ThermoMSFIterator(path)
                         self.colnames.append('Spectrum ID')
@@ -150,6 +155,8 @@ class LoaderThread(QThread):
                         self.emit(SIGNAL('updateProgress'),iterObj.iObj.getProgress())
                         if iterObj.fileType == 'msf':
                             toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),str(i.spectrumId), str(i.confidence), str(i.rank)]
+                        elif iterObj.fileType == 'dat':
+                            toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),str(i.hit),str(i.rank)]
                         else:
                             toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession()]
                         nid = toAdd[self.groupBy]#group on peptide by default
@@ -157,7 +164,7 @@ class LoaderThread(QThread):
                         if node is None:
                             newNode = QTreeWidgetItem()
                             for colI, colV in enumerate(toAdd):
-                                newNode.setText(colI,colV)
+                                newNode.setText(colI,str(colV))
                             newNode.fileName = fileIndex
                             newNode.data = toAdd
                             newNode.subnodes = []
@@ -166,7 +173,7 @@ class LoaderThread(QThread):
                         else:
                             newNode = QTreeWidgetItem(node)
                             for colI, colV in enumerate(toAdd):
-                                newNode.setText(colI,colV)
+                                newNode.setText(colI,str(colV))
                             newNode.fileName = fileIndex
                             newNode.data = toAdd
                             self.data[node].subnodes.append(newNode)
@@ -442,7 +449,7 @@ class MainWindow(QMainWindow):
         self.filemenu.addAction(openAction)
         self.filemenu.addAction(settingsAction)
         self.filemenu.addAction(exitAction)
-        self.validExtensions = set(['.xml', '.msf', '.mgf'])
+        self.validExtensions = set(['.xml', '.msf', '.mgf', '.dat'])
         self._form.tabWidget.setTabsClosable(True)
         self._form.tabWidget.tabCloseRequested.connect(self.onTabClose)
         loadConfig()
@@ -477,9 +484,11 @@ class MainWindow(QMainWindow):
         if masses.lossMasses.has_key(aa):
             closses = list(masses.lossMasses[aa])
         else:
-            closses = []
-        closses.append((loss,tuple(ions),display))
-        masses.lossMasses[aa] = tuple(closses)  
+            closses = set([])
+        if not closses.count((loss,tuple(ions),display)):
+            closses.append((loss,tuple(ions),display))
+            masses.lossMasses[aa] = tuple(closses)
+        print masses.lossMasses[aa]  
         
         
     def onSettings(self, args):
@@ -568,6 +577,8 @@ class ViewerTab(QWidget):
         scanTitle = item.text(0)
         if self.getFileType(fileMapping[item.fileName]) == 'msf':
             self.loadScan(fileMapping[item.fileName], str(scanTitle),specId=item.text(5),peptide=item.text(1))
+        elif self.getFileType(fileMapping[item.fileName]) == 'dat':
+            self.loadScan(fileMapping[item.fileName], str(scanTitle),hitId=item.text(5),rank=item.text(6))
         else:
             self.loadScan(fileMapping[item.fileName], str(scanTitle))
         
@@ -598,7 +609,7 @@ class ViewerTab(QWidget):
         self.vl = QVBoxLayout(self.parent._form.tabWidget.currentWidget())
         self.vl.setObjectName('vl')
         self.progressText = QLabel()
-        self.progressText.setText("Loading Spectra File...MSF Files may take longer to start showing load status")
+        self.progressText.setText("Loading Spectra File...MSF & DAT Files may take longer to start showing load status")
         self.onFileText = QLabel()
         self.onFileText.setText("Loading file 1 of %d"%len(self.files))
         self.vl.addWidget(self.progressText, 0, Qt.AlignTop)
@@ -624,7 +635,7 @@ class ViewerTab(QWidget):
             for it in iterObjects:
                 if it.fileType == 'gff':
                     self.parent.gffFiles[it.path] = it.iObj
-                elif it.fileType == 'xml' or it.fileType == 'msf':
+                elif it.fileType == 'xml' or it.fileType == 'msf' or it.fileType == 'dat':
                     self.parent.pepFiles[it.path] = it.iObj
                 elif it.fileType == 'spectra':
                     self.parent.mgfFiles[it.path] = it.iObj
@@ -707,7 +718,7 @@ class ViewerTab(QWidget):
         for it in iterObjects:
             if it.fileType == 'gff':
                 self.parent.gffFiles[it.path] = it.iObj
-            elif it.fileType == 'xml' or it.fileType == 'msf':
+            elif it.fileType == 'xml' or it.fileType == 'msf' or it.fileType == 'dat':
                 self.parent.pepFiles[it.path] = it.iObj
             elif it.fileType == 'spectra':
                 self.parent.mgfFiles[it.path] = it.iObj
@@ -899,11 +910,13 @@ class ViewerTab(QWidget):
             self.plotIons(x,y,a)
             if self.draw.ionView['all']:
                 self.draw.plotXY(x,y)
-        elif self.getFileType(path) == 'xml' or self.getFileType(path) == 'msf':
+        elif self.getFileType(path) == 'xml' or self.getFileType(path) == 'msf' or self.getFileType(path) == 'dat':
             if self.getFileType(path) == 'xml':
                 scan = self.parent.pepFiles[path].getScan(title)
             elif self.getFileType(path) == 'msf':
                 scan = self.parent.pepFiles[path].getScan(title,kwrds['specId'],kwrds['peptide'])
+            elif self.getFileType(path) == 'dat':
+                scan = self.parent.pepFiles[path].getScan(title,kwrds['hitId'], kwrds['rank'])
             if not scan:
                 return
             mods = scan.getModifications()
@@ -1190,6 +1203,5 @@ class DrawFrame(PlotPanel):
         
 app = QApplication(sys.argv)
 w = MainWindow()
-w.addPage(['A1.2012_06_07_12_20_00.t.xml'])
 #w.addPage(['sampleMgf.mgf'])
 app.exec_()

@@ -20,7 +20,12 @@ try:
     from lxml import etree
 except ImportError:
     import xml.etree.cElementTree as etree
-    #print 'lxml is required to parse X!tandem & Thermo MSF xml files due to the namespaces employed'
+
+try:
+    import msparser
+except ImportError:
+    print 'msparser not found, Mascot DAT files unable to be parsed'
+    
 
 #regex for common use
 scanSplitter = re.compile(r'[\t\s]')
@@ -684,6 +689,114 @@ class mgfIterator(object):
             
     def getProgress(self):
         return self.f.tell()*100/self.epos
+    
+class MascotDATIterator(object):
+    def __init__(self, filename):
+        if not isinstance(filename,(str,unicode)):
+            raise Exception(TypeError,"Unknown Type of filename -- must be a file path")
+        self.specParse = re.compile(r'Spectrum(\d+)')
+        self.afterSlash = re.compile(r'.+[\\/](.+)$')
+        self.f = filename
+        resfile = msparser.ms_mascotresfile(self.f)
+        self.hit=0
+        results = msparser.ms_peptidesummary(resfile, msparser.ms_mascotresults.MSRES_MAXHITS_OVERRIDES_MINPROB,0,0,"",0,5,"",msparser.ms_peptidesummary.MSPEPSUM_USE_HOMOLOGY_THRESH)
+        hasFdr, closeFdr, minP = results.getThresholdForFDRAboveHomology(0.01)
+        self.resfile = msparser.ms_mascotresfile(self.f)
+        self.results = msparser.ms_peptidesummary(self.resfile, msparser.ms_mascotresults.MSRES_SHOW_SUBSETS|msparser.ms_mascotresults.MSRES_CLUSTER_PROTEINS,minP,9999999,"",0,5,"",msparser.ms_peptidesummary.MSPEPSUM_USE_HOMOLOGY_THRESH)
+        self.sparams = msparser.ms_searchparams(self.resfile)
+        self.numHits = self.results.getNumberOfHits()
+        self.scanMap = {}
+        
+    def __iter__(self):
+        return self
+    
+    def next(self):
+        self.hit+=1
+        return self.parseScan(self.hit)
+    
+    def getScan(self, title,hit,rank):
+        return self.scanMap[int(hit),int(rank)]
+#        scan = self.parseScan(int(hit),peprank=int(rank),full=True)
+#        return scan
+    
+    def parseScan(self, hit,full=True,peprank=False):
+        prot = self.results.getHit(hit)
+        if prot:
+            num_peps = prot.getNumPeptides()
+            rms = prot.getRMSDeltas(self.results)
+            for i in range(1, 1+ num_peps) :
+                query = prot.getPeptideQuery(i)
+                p     = prot.getPeptideP(i) 
+                if p != -1 and query != -1:
+                    pep = self.results.getPeptide(query, p)
+                    rank = pep.getRank()
+                    if peprank and rank != peprank:
+                        continue
+                    if not pep:
+                        continue
+                    pstart = prot.getPeptideStart(i)
+                    scanObj = peptideObject()
+                    scanObj.hit = hit
+                    scanObj.rank = rank
+                    peptide = pep.getPeptideStr()
+                    scanObj.setPeptide(peptide)
+                    charge = pep.getCharge()
+                    scanObj.addCharge(charge)
+                    mass = self.resfile.getObservedMrValue(query)
+                    scanObj.addMass(mass)
+                    vmods = pep.getVarModsStr()
+                    for aanum,residue in enumerate(vmods):
+                        try:
+                            residue = int(residue)
+                        except ValueError:
+                            #we're a character
+                            residue = 9+ord(residue)-64
+                        if residue:
+                            modName = self.sparams.getVarModsName(residue)
+                            modMass = self.sparams.getVarModsDelta(residue)
+                            scanObj.addModification(peptide[aanum], pstart-1+aanum, modMass, modName)
+                        #self.sparams.getVarModsNeutralLosses(residue),self.sparams.getVarModsPepNeutralLoss(residue)
+                    svec = msparser.VectorString()
+                    ivec    = msparser.vectori()
+                    prot.getSimilarProteins(svec,ivec)
+                    simProteins = set([prot.getAccession()])
+                    for acc,db in zip(svec,ivec):
+                        simProteins.add(acc)
+                    proteinGroups = ';'.join(simProteins)
+                    scanObj.setAccession(proteinGroups)
+                    modString = self.results.getReadableVarMods(query,p)
+                    inputQuery = msparser.ms_inputquery(self.resfile,query)
+                    stitle = inputQuery.getStringTitle(True)
+                    if full:
+                        ions1 = inputQuery.getStringIons1()
+                        ions2 = inputQuery.getStringIons2()
+                        ions3 = inputQuery.getStringIons3()
+                        if ions1:
+                            for mz,intensity in [mzint.split(':') for mzint in ions1.split(',')]:
+                                scanObj.addScan(mz,intensity)
+                        if ions2:
+                            for mz,intensity in [mzint.split(':') for mzint in ions2.split(',')]:
+                                scanObj.addScan(mz,intensity)
+                        if ions3:
+                            for mz,intensity in [mzint.split(':') for mzint in ions3.split(',')]:
+                                scanObj.addScan(mz,intensity)
+                    specId = self.specParse.search(stitle).group(1)
+                    scanObj.setId(specId)
+                    self.scanMap[hit,rank] = scanObj
+                    return scanObj
+        else:
+            del self.resfile
+            del self.results
+            del self.sparams
+            raise StopIteration
+        return None
+    
+    def getProgress(self):
+        return self.hit*100/self.numHits
+    
+#for scan in MascotDATIterator('/home/chris/Individualome/Mascot/UnassignedSpectra/6FHg19/F010466.dat'):
+#    if scan:
+#        print scan
             
 class ThermoMSFIterator(object):
     def __init__(self, filename):
