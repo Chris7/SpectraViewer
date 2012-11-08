@@ -142,6 +142,7 @@ class LoaderThread(QThread):
                 elif iterObj.fileType == 'xml' or iterObj.fileType == 'msf' or iterObj.fileType == 'dat':
                     if iterObj.fileType == 'xml':
                         iterObj.iObj = fileIterators.XTandemXML(path)
+                        self.colnames.append('Expect')
                     elif iterObj.fileType == 'dat':
                         iterObj.iObj = fileIterators.MascotDATIterator(path)
                         self.colnames.append('Hit Id')
@@ -154,9 +155,11 @@ class LoaderThread(QThread):
                     for i in iterObj.iObj:
                         self.emit(SIGNAL('updateProgress'),iterObj.iObj.getProgress())
                         if iterObj.fileType == 'msf':
-                            toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),str(i.spectrumId), str(i.confidence), str(i.rank)]
+                            toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),str(i.spectrumId), int(i.confidence), int(i.rank)]
                         elif iterObj.fileType == 'dat':
-                            toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),str(i.hit),str(i.rank)]
+                            toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),int(i.hit),int(i.rank)]
+                        elif iterObj.fileType == 'xml':
+                            toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession(),float(i.getExpect())]
                         else:
                             toAdd = [i.getId(), i.getPeptide(), i.getModifications(), str(i.getCharge()),i.getAccession()]
                         nid = toAdd[self.groupBy]#group on peptide by default

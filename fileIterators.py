@@ -146,6 +146,9 @@ class peptideObject(scanObject):
     def getPeptide(self):
         return self.peptide
     
+    def getExpect(self):
+        return self.expect
+    
 class XTandemXML(object):
     """
     Parser for X!Tandem XML Files.
@@ -165,8 +168,8 @@ class XTandemXML(object):
             return 
         if self.lxml:
             self.group = dom1.findall("group")
-            self.groupMap = {}
-            self.index = 0
+            self.scans = {}
+            self.num = len(self.group)
         else:
             #this isn't implemented 
             self.nest = 0
@@ -194,7 +197,6 @@ class XTandemXML(object):
         try:
             expect = group.attrib["expect"]
         except KeyError:
-            self.group.pop(self.index)
             self.next()
         subnote = list(group.iter("note"))
         for i in subnote:
@@ -235,40 +237,33 @@ class XTandemXML(object):
             id = domain.attrib["id"]
             start = domain.attrib["start"]
             end = domain.attrib["end"]
-            peptide = domain.attrib["seq"]
+            peptide = domain.attrib["seq"].replace(' ','')#for some reason it can have spaces
             pExpect = domain.attrib["expect"]
             for mod in mods:
                 scanObj.addModification(mod.attrib["type"],int(mod.attrib["at"])-1,float(mod.attrib["modified"]), False)
             scanObj.setPeptide(peptide)
             scanObj.setExpect(pExpect)
             scanObj.setId(id)
-            if self.startIter:
-                self.groupMap[id] = self.index
-                self.index+=1
             scanObj.addTitle(id)
             scanObj.setAccession(note.text)
+            self.scans[id] = scanObj
         return scanObj
     
     def next(self):
-        try:
-            group = self.group[self.index]
-        except IndexError:
-            self.startIter = False
-            raise StopIteration
-        if self.lxml:
-            return self.parselxml(group)
+        if self.group:
+            group = self.group.pop(0)
         else:
-            return self.parsetext()
+            raise StopIteration
+        return self.parselxml(group)
                 
     def getScan(self, id):
-        index = self.groupMap[id]
         try:
-            return self.parselxml(self.group[index])
+            return self.scans[id]
         except IndexError:
             print 'wtf'
     
     def getProgress(self):
-        return self.index*100/len(self.group) 
+        return len(self.scans)*100/self.num 
     
 class GFFObject(object):
     def __init__(self, infoList, filters, filterOnly,keydelim,exclude):
