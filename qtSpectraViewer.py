@@ -407,65 +407,51 @@ class LoaderThread(QThread):
                                 newNode.fileName = fileIndex
                                 newNode.data = toAdd
                                 self.data[node].subnodes.append(newNode)
-                elif iterObj.fileType == 'xml' or iterObj.fileType == 'msf' or iterObj.fileType == 'dat':
-                    if iterObj.fileType == 'xml':
+                elif iterObj.fileType == 'xml':
                         iterObj.iObj = fileIterators.XTandemXML(path)
                         self.colnames['Expect'] = (float,'expect',1)
-                    elif iterObj.fileType == 'dat':
-                        iterObj.iObj = fileIterators.MascotDATIterator(path)
-                        self.colnames['Hit Id'] = (int,'hit',1)
-                        self.colnames['Rank'] = (int,'rank',1)
-                    elif iterObj.fileType == 'msf':
-                        iterObj.iObj = fileIterators.ThermoMSFIterator(path)
-                        self.colnames['Spectrum ID'] = (int, 'hit',1)
-                        self.colnames['Confidence Level'] = (int, 'confidence',1)
-                        self.colnames['Search Engine Rank'] = (int, 'rank',1)
-                    for i in iterObj.iObj:
-                        self.emit(SIGNAL('updateProgress'),iterObj.iObj.getProgress())
-                        toAdd = [getattr(i,j[1]) if j[2] else getattr(i,j[1])() for j in self.colnames.values()]
-                        nid = toAdd[self.groupBy]#group on peptide by default
-                        node = self.objMap.get(nid)
-                        if node is None:
-                            newNode = QTreeWidgetItem()
-                            [newNode.setText(i,str(v)) for i,v in enumerate(toAdd)]
-                            newNode.fileName = fileIndex
-                            newNode.data = toAdd
-                            newNode.subnodes = []
-                            self.data[newNode] = newNode
-                            self.objMap[nid] = newNode
-                        else:
-                            newNode = QTreeWidgetItem(node)
-                            [newNode.setText(i,str(v)) for i,v in enumerate(toAdd)]
-                            newNode.fileName = fileIndex
-                            newNode.data = toAdd
-                            self.data[node].subnodes.append(newNode)
+                elif iterObj.fileType == 'dat':
+                    iterObj.iObj = fileIterators.MascotDATIterator(path)
+                    self.colnames['Hit Id'] = (int,'hit',1)
+                    self.colnames['Rank'] = (int,'rank',1)
+                elif iterObj.fileType == 'msf':
+                    iterObj.iObj = fileIterators.ThermoMSFIterator(path)
+                    self.colnames['Spectrum ID'] = (int, 'spectrumId',1)
+                    self.colnames['Confidence Level'] = (int, 'confidence',1)
+                    self.colnames['Search Engine Rank'] = (int, 'rank',1)
             elif [i for i in specType if i in path]:
                 iterObj.fileType = 'spectra'#these are all generic more or less, so spectra works
                 iterObj.dataType = 'spectra'
                 self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("Charge",(int,'charge',1)), ("RT",(str,'rt',1)), ("Precursor Mass",(str,'mass',1))])
                 iterObj.iObj = fileIterators.mgfIterator(path, random=True)
                 self.groupBy = 0
-                for i in iterObj.iObj:
-                    if not i:
-                        continue
-                    self.emit(SIGNAL('updateProgress'),iterObj.iObj.getProgress())
-                    toAdd = [getattr(i,j[1]) if j[2] else getattr(i,j[1])() for j in self.colnames.values()]
-                    nid = toAdd[self.groupBy]#group on title by default (should be unique)
+            else:
+                self.colnames = ["none"]
+                iterObj.fileType = 'none'
+                iterObj.dataType = 'none'
+                self.emit(SIGNAL('fileDone'),fileindex,len(self.files))
+                return
+            for i in iterObj.iObj:
+                if not i:
+                    continue
+                self.emit(SIGNAL('updateProgress'),iterObj.iObj.getProgress())
+                toAdd = [getattr(i,j[1]) if j[2] else getattr(i,j[1])() for j in self.colnames.values()]
+                nid = toAdd[self.groupBy]#group on peptide by default
+                node = self.objMap.get(nid)
+                if node is None:
                     newNode = QTreeWidgetItem()
                     [newNode.setText(i,str(v)) for i,v in enumerate(toAdd)]
                     newNode.fileName = fileIndex
                     newNode.data = toAdd
                     newNode.subnodes = []
-                    node = self.objMap.get(nid)
-                    if node is None:
-                        self.data[newNode] = newNode
-                        self.objMap[nid] = newNode
-                    else:
-                        self.data[node].subnodes.append(newNode)
-            else:
-                self.colnames = ["none"]
-                iterObj.fileType = 'none'
-                iterObj.dataType = 'none'
+                    self.data[newNode] = newNode
+                    self.objMap[nid] = newNode
+                else:
+                    newNode = QTreeWidgetItem(node)
+                    [newNode.setText(i,str(v)) for i,v in enumerate(toAdd)]
+                    newNode.fileName = fileIndex
+                    newNode.data = toAdd
+                    self.data[node].subnodes.append(newNode)
             self.emit(SIGNAL('fileDone'),fileindex,len(self.files))
 
 class PeptidePanel(QWidget):

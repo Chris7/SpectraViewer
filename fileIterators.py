@@ -61,11 +61,13 @@ class peptideObject(scanObject):
     An enhanced scan object that can store peptide information as well
     attributes:
     mods (set item), peptide, expect, id, acc(accession)
+    for msf files: spectrumId, confidence, rank
     """
     def __init__(self):
         scanObject.__init__(self)
         self.mods = set([])
         self.peptide = ""
+        self.hit = 0
         
     def addModification(self, aa,position, modMass, modType):
         """
@@ -775,6 +777,7 @@ class ThermoMSFIterator(object):
             sql = 'select GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.SearchEngineRank),GROUP_CONCAT(p.Sequence),GROUP_CONCAT(p.PeptideID), GROUP_CONCAT(pp.ProteinID), p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1 and p.SearchEngineRank = 1 GROUP BY p.SpectrumID'
             self.cur.execute(sql)
         except sqlite3.OperationalError:
+            print 'error'
             sql = 'select COUNT(distinct p.SpectrumID) from peptides p where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1'
             self.nrows = self.conn.execute(sql).fetchone()[0]
             #sql = 'select sp.spectrum,p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
