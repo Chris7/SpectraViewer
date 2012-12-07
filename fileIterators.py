@@ -34,72 +34,38 @@ lastSplit = re.compile(r'.+[/\\](.+)')
 
 class scanObject(object):
     """
-    A scan object to store peaklist information in.  There are some getter/setter functions to keep variables similiar across file types
+    A scan object to store peaklist information in.
+    Attributes:
+    title, charge, mass, scans(list), rt
     """
     def __init__(self):
         self.scans = []
+        self.rt = ''
         pass
-    
-    def addTitle(self, title):
-        self.title = title
-        
-    def addCharge(self, charge):
-        self.charge = charge
-        
-    def addMass(self, mass):
-        self.mass = mass
-        
-    def addScan(self, mz, intensity):
-        self.scans.append((float(mz),float(intensity)))
-        
-    def getInfo(self):
-        return self.scans
-    
-    def getCharge(self):
-        return self.charge
-    
-    def addRT(self, rt):
-        self.rt = rt
-    
-    def getTitle(self):
-        return self.title
-    
-    def getRT(self):
-        try:
-            return self.rt
-        except AttributeError:
-            return ''
-        
-    def getMZ(self):
-        return self.scans
-    
-    def getPrecursor(self):
-        return self.mass
     
     def writeScan(self, o):
         o.write('BEGIN IONS\n')
         o.write('TITLE=%s\n'%self.title)
         try:
-            o.write('RTINSECONDS=%s\n'%self.rt)
+            o.write('RTINSECONDS=%f\n'%self.rt)
         except AttributeError:
             pass
         o.write('PEPMASS=%s\n'%self.mass)
         o.write('CHARGE=%s\n'%self.charge)
         for i in self.scans:
-            o.write('%s\n'%i)
+            o.write('%f\t%f\n'%i)
         o.write('END IONS\n\n')
         
 class peptideObject(scanObject):
     """
     An enhanced scan object that can store peptide information as well
+    attributes:
+    mods (set item), peptide, expect, id, acc(accession)
     """
     def __init__(self):
         scanObject.__init__(self)
         self.mods = set([])
         self.peptide = ""
-        
-    def setPeptide(self, peptide):
-        self.peptide = peptide
         
     def addModification(self, aa,position, modMass, modType):
         """
@@ -124,30 +90,9 @@ class peptideObject(scanObject):
             if not modType:
                 print 'mod not found',modMass
         self.mods.add((aa,str(position),str(modMass),str(modType)))
-        
-    def setExpect(self, expect):
-        self.expect = expect
-    
-    def setId(self, id):
-        self.id = id
-        
-    def setAccession(self, acc):
-        self.acc = acc
-        
-    def getId(self):
-        return self.id
-    
-    def getAccession(self):
-        return self.acc
-    
+
     def getModifications(self):
         return '|'.join([','.join(i) for i in self.mods])
-    
-    def getPeptide(self):
-        return self.peptide
-    
-    def getExpect(self):
-        return self.expect
     
 class XTandemXML(object):
     """
@@ -209,9 +154,10 @@ class XTandemXML(object):
         fullProtein = ""
         for protein in proteins:
             scanObj = peptideObject()
-            scanObj.addCharge(charge)
-            scanObj.addMass(premass*int(charge))
-            scanObj.addRT(rt)
+            scanObj.charge = charge
+            scanObj.mass =premass*int(charge)
+            if rt:
+                scanObj.rt = float(rt)
             sgroup = group.iter("group")
             for i in sgroup:
                 #This is horridly inefficient...
@@ -227,7 +173,7 @@ class XTandemXML(object):
                         for k in mzIter:
                             inten = [mval for mval in k.text.strip().replace('\n',' ').split(' ')]
                     for j,k in zip(mz,inten):
-                        scanObj.addScan(j,k)
+                        scanObj.scans.append((float(j),float(k)))
             domain = list(protein.iter("domain"))[0]#we only have one domain per protein instance
             note = list(protein.iter("note"))[0]#same here
             mods = list(protein.iter("aa"))#we can have multiple modifications
@@ -241,11 +187,11 @@ class XTandemXML(object):
             pExpect = domain.attrib["expect"]
             for mod in mods:
                 scanObj.addModification(mod.attrib["type"],int(mod.attrib["at"])-1,float(mod.attrib["modified"]), False)
-            scanObj.setPeptide(peptide)
-            scanObj.setExpect(pExpect)
-            scanObj.setId(id)
-            scanObj.addTitle(id)
-            scanObj.setAccession(note.text)
+            scanObj.peptide = peptide
+            scanObj.expect = float(pExpect)
+            scanObj.id = id
+            scanObj.title = id
+            scanObj.acc = note.text
             self.scans[id] = scanObj
         return scanObj
     
@@ -306,7 +252,7 @@ class GFFObject(object):
         return self.id
                 
     def addChild(self, child):
-        cid = child.getId()
+        cid = child.id
         if cid:
             self.children[cid] = child
         
@@ -627,10 +573,10 @@ class mgfIterator(object):
             entry = row.strip().split('=')
             if len(entry) >= 2:
                 if entry[0] == 'PEPMASS':
-                    scanObj.addMass(entry[1])
+                    scanObj.mass = float(entry[1])
                     foundMass = True
                 elif entry[0] == 'CHARGE':
-                    scanObj.addCharge(entry[1])
+                    scanObj.charge = entry[1]
                     foundCharge = True
                 elif entry[0] == 'TITLE':
 #                    if self.titleMap:
@@ -639,12 +585,12 @@ class mgfIterator(object):
 #                    else:
                     title = '='.join(entry[1:])
                     foundTitle = True
-                    scanObj.addTitle(title)
+                    scanObj.title = title
                 elif entry[0] == 'RTINSECONDS':
-                    scanObj.addRT(entry[1])
+                    scanObj.rt = float(entry[1])
             else:
                 mz,intensity = self.scanSplit.split(row.strip())
-                scanObj.addScan(mz,intensity)
+                scanObj.scans.append((float(mz),float(intensity)))
         if foundCharge and foundMass and foundTitle:
             return scanObj
         return None
@@ -674,7 +620,7 @@ class mgfIterator(object):
                 scan = self.parseScan(scanInfo)
                 if scan:
                     if self.rand:
-                        self.ra[scan.getTitle()] = (pStart,pos)
+                        self.ra[scan.title] = (pStart,pos)
                     return scan
                 return None
             elif setupScan:
@@ -734,11 +680,11 @@ class MascotDATIterator(object):
                     scanObj.hit = hit
                     scanObj.rank = rank
                     peptide = pep.getPeptideStr()
-                    scanObj.setPeptide(peptide)
+                    scanObj.peptide = peptide
                     charge = pep.getCharge()
-                    scanObj.addCharge(charge)
+                    scanObj.charge = charge
                     mass = self.resfile.getObservedMrValue(query)
-                    scanObj.addMass(mass)
+                    scanObj.mass = float(mass)
                     vmods = pep.getVarModsStr()
                     for aanum,residue in enumerate(vmods):
                         try:
@@ -758,7 +704,7 @@ class MascotDATIterator(object):
                     for acc,db in zip(svec,ivec):
                         simProteins.add(acc)
                     proteinGroups = ';'.join(simProteins)
-                    scanObj.setAccession(proteinGroups)
+                    scanObj.acc = proteinGroups
                     modString = self.results.getReadableVarMods(query,p)
                     inputQuery = msparser.ms_inputquery(self.resfile,query)
                     stitle = inputQuery.getStringTitle(True)
@@ -768,15 +714,15 @@ class MascotDATIterator(object):
                         ions3 = inputQuery.getStringIons3()
                         if ions1:
                             for mz,intensity in [mzint.split(':') for mzint in ions1.split(',')]:
-                                scanObj.addScan(mz,intensity)
+                                scanObj.scans.append((float(mz),float(intensity)))
                         if ions2:
                             for mz,intensity in [mzint.split(':') for mzint in ions2.split(',')]:
-                                scanObj.addScan(mz,intensity)
+                                scanObj.scans.append((float(mz),float(intensity)))
                         if ions3:
                             for mz,intensity in [mzint.split(':') for mzint in ions3.split(',')]:
-                                scanObj.addScan(mz,intensity)
+                                scanObj.scans.append((float(mz),float(intensity)))
                     specId = self.specParse.search(stitle).group(1)
-                    scanObj.setId(specId)
+                    scanObj.id = specId
                     self.scanMap[hit,rank] = scanObj
                     return scanObj
         else:
@@ -868,17 +814,17 @@ class ThermoMSFIterator(object):
                     scanObj.addModification(sequence[int(modPosition)], modPosition, modEntry[1], modEntry[0])
             except KeyError:
                 pass
-            scanObj.setPeptide(sequence)
+            scanObj.peptide = sequence
             scanObj.rank = searchRank
             scanObj.confidence = confidence
-            scanObj.setAccession(proId)
-            scanObj.addCharge(i[6])
+            scanObj.acc = proId
+            scanObj.charge = i[6]
             fName = self.sFileMap[i[10]]
             fScan = i[8]
             lScan = i[9]
             sid = '%s.%s.%s'%(fName, fScan,lScan)
-            scanObj.addTitle(sid)
-            scanObj.setId(sid)
+            scanObj.title = sid
+            scanObj.id = sid
             scanObj.spectrumId=i[5]
             objs.append(scanObj)
         return objs
@@ -896,7 +842,7 @@ class ThermoMSFIterator(object):
         sql = 'select aam.ModificationName,pam.Position,aam.DeltaMass from peptidesaminoacidmodifications pam left join aminoacidmodifications aam on (aam.AminoAcidModificationID=pam.AminoAcidModificationID) where pam.PeptideID=%s'%pid
         for row in self.conn.execute(sql):
             scanObj.addModification(peptide[row[1]], str(row[1]), str(row[2]), row[0])
-        scanObj.setPeptide(peptide)
+        scanObj.peptide = peptide
         for j in zf.namelist():
             msInfo = zf.read(j)
             msStr = msInfo.split('\n') 
@@ -911,16 +857,16 @@ class ThermoMSFIterator(object):
                         #msScanSum = finfo[5]
                         fName = self.sFileMap[fileName]
                         sid = '%s.%s.%s'%(fName, finfo[2],finfo[2])
-                        scanObj.addTitle(sid)
-                        scanObj.setId(sid)
+                        scanObj.title = sid
+                        scanObj.id = sid
                         stage=1
                 elif stage == 1:
                     if 'PrecursorInfo' in row:
                         finfo = row.split('"')
                         charge = finfo[3]
                         smass = finfo[5]
-                        scanObj.addCharge(charge)
-                        scanObj.addMass(smass)
+                        scanObj.charge = charge
+                        scanObj.mass = float(smass)
                         stage=2
                 elif stage == 2:
                     if '<PeakCentroids>' in row:
@@ -929,7 +875,7 @@ class ThermoMSFIterator(object):
                     #we just grab the ms/ms peaks at the moment
                     if 'Peak X' in row:
                         finfo = row.split('"')
-                        scanObj.addScan(finfo[1],finfo[3])
+                        scanObj.scans.append((float(finfo[1]),float(finfo[3])))
                     elif '</PeakCentroids>' in row:
                         break
         if msInfo:
@@ -994,9 +940,9 @@ class mgfParser(object):
                 entry = row.strip().split('=')
                 if len(entry) >= 2:
                     if entry[0] == 'PEPMASS':
-                        scanObj.addMass(entry[1])
+                        scanObj.mass = float(entry[1])
                     elif entry[0] == 'CHARGE':
-                        scanObj.addCharge(entry[1])
+                        scanObj.charge = entry[1]
                     elif entry[0] == 'TITLE':
                         if distiller:
                             m = tparse.match(row)
@@ -1004,13 +950,15 @@ class mgfParser(object):
 #                            print m, m.groups() 
                         else:
                             title = entry[1]
-                            scanObj.addTitle(entry[1])
+                            scanObj.title = entry[1]
                 else:
                     row.strip()
-                    scanObj.addScan(row.strip())
+                    mz,inten = row.strip().split('\t')
+                    scanObj.scans.append((float(mz),float(inten)))
                     setupScan=False
             elif newScan and not setupScan:
-                scanObj.addScan(row.strip())
+                mz,inten = row.strip().split('\t')
+                scanObj.scans.append((float(mz),float(inten)))
         print 'parsed',len(self.scans)
         
     def hasScan(self, scan):
