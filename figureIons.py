@@ -18,14 +18,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import re, masses, operator, copy
 
 class figureIons(object):
-    def __init__(self,seq,ioncharge,mods, tolerance, skipLoss=None):
-        self.sequence=seq.upper()
-        self.ioncharge = ioncharge
+    def __init__(self,scan, tolerance, skipLoss=None):
+    #def __init__(self,seq,ioncharge,mods, tolerance, skipLoss=None):
+        self.sequence=scan.peptide.upper()
+        self.ioncharge = scan.charge
         self.modList = {}
-        if mods:
-            mods = mods.split('|')
+        self.scan = scan
+        if scan.mods:
+            mods = scan.mods
             for mod in mods:
-                modification, start, mass, modType = mod.split(',')
+                modification, start, mass, modType = mod
                 self.modList[int(start)] = (mass,modType.lower())
         self.tolerance = tolerance
         self.skipLoss=skipLoss
@@ -36,8 +38,8 @@ class figureIons(object):
         format sorted by low->high mz:
         list of tuples of: [(m/z, fragment type(A,B,C,X,Y,Z), fragment #, charge state,neutral loss, peptide),(...)]
         """
-        mass = 0
         self.peakTable = []
+        mass = 0
         modList = self.modList
         maxcharge = int(self.ioncharge)
         hw = masses.mod_weights['h'][0]
@@ -160,33 +162,49 @@ class figureIons(object):
         self.peakTable.sort(key=operator.itemgetter(0))
         return self.peakTable
     
-    def assignPeaks(self, x, y):
+    def assignPeaks(self):
         """
         given a list of masses, returns what predicted peaks match up
-        return format: [(m/z, intensity, amino acid, fragmentation type, fragment #, charge, neutral loss)]
+        return format: [((m/z, intensity, amino acid, fragmentation type, fragment #, charge, neutral loss), error)]
         """
-        self.predictPeaks()
-        out = []
-        start=0
-        primaries = set([])
-        for seqindex,peaks in enumerate(self.peakTable):
-            mz,fragType, fragNum,charge,loss,aa = peaks
-            candidates = []
-            seen = False
-            for index,m in enumerate(x[start:]):
-                if m+self.tolerance > mz > m-self.tolerance:
-                    seen = True
-                    candidates.append((x[start+index],y[start+index],fragType, fragNum,charge,loss,aa))
-                elif mz > m+self.tolerance and seen:
-                    start=index
-                    break
-            if candidates:
-                candidates.sort(key=operator.itemgetter(1))
-                toadd = candidates[0]
-                if not toadd[5]:
-                    primaries.add((toadd[2:5]))
-                out.append((candidates[0],candidates[0][0]-mz))
-        #now we filter out our secondary ions if the primary ion is missing 
-        #(so we don't have a yn-h20 if we don't have a yn)
-        out[:] = [x for x in out if not x[0][5] or (x[0][5] and x[0][2:5] in primaries)]
+        try:
+            matchDict = self.scan.matched
+            self.x = matchDict['m/z']
+            self.y = matchDict['intensity']
+            aas = [self.sequence[i] for i in matchDict['start']]
+            out = [((i,j,k,l,m,n,o),p) for (i,j,k,l,m,n,o,p) in zip(self.x, self.y, [p[0] for p in matchDict['series']], matchDict['start'],matchDict['charge'],matchDict['losses'],aas,matchDict['error'])]
+            print out
+        except KeyError:
+            self.predictPeaks()
+            scan = self.scan
+            mods = scan.getModifications()
+            mz = scan.scans
+            x = []
+            y = []
+            for i in mz:
+                x.append(float(i[0]))
+                y.append(float(i[1]))
+            out = []
+            start=0
+            primaries = set([])
+            for seqindex,peaks in enumerate(self.peakTable):
+                mz,fragType, fragNum,charge,loss,aa = peaks
+                candidates = []
+                seen = False
+                for index,m in enumerate(x[start:]):
+                    if m+self.tolerance > mz > m-self.tolerance:
+                        seen = True
+                        candidates.append((x[start+index],y[start+index],fragType, fragNum,charge,loss,aa))
+                    elif mz > m+self.tolerance and seen:
+                        start=index
+                        break
+                if candidates:
+                    candidates.sort(key=operator.itemgetter(1))
+                    toadd = candidates[0]
+                    if not toadd[5]:
+                        primaries.add((toadd[2:5]))
+                    out.append((candidates[0],candidates[0][0]-mz))
+            #now we filter out our secondary ions if the primary ion is missing 
+            #(so we don't have a yn-h20 if we don't have a yn)
+            out[:] = [x for x in out if not x[0][5] or (x[0][5] and x[0][2:5] in primaries)]
         return out

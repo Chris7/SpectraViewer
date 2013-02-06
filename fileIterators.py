@@ -61,6 +61,8 @@ class peptideObject(scanObject):
     An enhanced scan object that can store peptide information as well
     attributes:
     mods (set item), peptide, expect, id, acc(accession)
+    matched -> dict with keys and lists as values:
+    keys: labels(like y1+-h20), m/z, intensity, error, series(y,a,b,...), start, end, losses(neutral losses), charge
     for msf files: spectrumId, confidence, rank
     """
     def __init__(self):
@@ -94,7 +96,7 @@ class peptideObject(scanObject):
         self.mods.add((aa,str(position),str(modMass),str(modType)))
 
     def getModifications(self):
-        return '|'.join([','.join(i) for i in self.mods])
+        return '|'.join([','.join(i) for i in self.mods])    
     
 class XTandemXML(object):
     """
@@ -647,7 +649,147 @@ class MascotDATIterator(object):
         self.resfile = msparser.ms_mascotresfile(self.f)
         self.results = msparser.ms_peptidesummary(self.resfile, msparser.ms_mascotresults.MSRES_SHOW_SUBSETS|msparser.ms_mascotresults.MSRES_CLUSTER_PROTEINS,minP,9999999,"",0,5,"",msparser.ms_peptidesummary.MSPEPSUM_USE_HOMOLOGY_THRESH)
         self.sparams = msparser.ms_searchparams(self.resfile)
+        self.quantMethod = False
+        if self.sparams.getQUANTITATION():
+            self.quantFile = msparser.ms_quant_configfile()
+            self.quantFile.setSchemaFileName(''.join(["http://www.matrixscience.com/xmlns/schema/quantitation_2","quantitation_2.xsd"," http://www.matrixscience.com/xmlns/schema/quantitation_1","quantitation_1.xsd"]))
+            if self.resfile.getQuantitation(self.quantFile):
+                if not self.quantFile.isValid():#true if errors
+                    print 'quant file invalid'
+                else:
+                    self.quantMethod = self.quantFile.getMethodByName(self.sparams.getQUANTITATION())
+                    if self.quantMethod:
+                        errors = self.quantFile.validateDocument()
+                        if errors:
+                            print 'quant errors',errors
+                        else:
+                            self.qstring = self.quantMethod.getProtocol().getType()
+                            self.quantMethod = msparser.ms_quant_method(self.qstring)
+        self.vMods = msparser.ms_modvector() 
+        self.uModFile = msparser.ms_umod_configfile()
+        if not self.resfile.getUnimod(self.uModFile):
+            self.uModFile = msparser.ms_umod_configfile("unimod.xml", "unimod_2.xsd")
+        if self.quantMethod:
+            self.quantSubs = {}
+            for i in xrange(self.quantMethod.getNumberOfModificationGroups()):
+                modGroup = self.quantMethod.getModificationGroupByNumber(i)
+                for j in modGroup.getNumberOfLocalDefinitions():
+                    print 'qunt sub thing',modGroup.getLocalDefinitions(j)
+                    print 'get from the unimod xml later'
+            for i in xrange(self.quantMethod.getNumberOfComponents()):
+                objComponent = self.quantMethod.getComponentByNumber(i)
+                for j in xrange(objComponent.getNumberOfModificationGroups()):
+                    modGroup = objComponent.getModificationGroupByNumber(j)
+                    for k in modGroup.getNumberOfLocalDefinitions():
+                        print 'qunt sub thing',modGroup.getLocalDefinitions(k)
+                        print 'get from the unimod xml later'
+        self.massFile = msparser.ms_masses(self.uModFile)
+        self.modFile = msparser.ms_modfile(self.uModFile, msparser.ms_umod_configfile.MODFILE_FLAGS_ALL)
+        if not self.modFile.isValid():
+            print 'parser error in mod file, add actual errors later'
+            return
+        self.massType = msparser.MASS_TYPE_MONO
+        if self.sparams.getMASS() == "average":
+            self.massType = msparser.MASS_TYPE_AVE
+        vInd = 1
+        modText = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, "delta%d"%vInd)
+        while modText:
+            modMass, modName = modText.split(',')
+            objMod = self.modFile.getModificationByName(modName)
+            if objMod:
+                self.vMods.appendModification(objMod)
+            else:
+                print 'Mod',modName,'not found'
+            vInd+=1
+            modText = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, "delta%d"%vInd)
+        self.vecFixed = msparser.ms_modvector();
+        vInd = 1
+        modText = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, "FixedMod%d"%vInd)
+        while modText:
+            modMass,modName = modText.split(',')
+            objMod = self.modFile.getModificationByName(modName);
+            if objMod:
+                self.vecFixed.appendModification(objMod);
+            else:
+              print 'Mod',modName,'not found'
+            vInd+=1
+            modText = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, "FixedMod%d"%vInd)
+        seci = 1
+        seckey = self.resfile.enumerateSectionKeys(msparser.ms_mascotresfile.SEC_MASSES,seci)
+        self.groupMasses = {}
+        self.elementalMasses = {}
+        self.vmMass = {}
+        secParse = re.compile(r'delta(\d+)')
+        while seckey:
+            secMatch = secParse.search(seckey)
+            if secMatch:
+                secMatchInd = int(secMatch.group(1))
+                if secMatchInd>9:
+                    secMatchInd = chr(secMatchInd+55)
+                self.vmMass[secMatchInd] = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, seckey).split(',')
+            elif seckey == 'Ignore%d'%seci:
+                pass
+            elif seckey == 'FixedMod%d'%seci:
+                pass
+            elif seckey == 'FixedModResidual%d'%seci:
+                pass
+            elif seckey == 'FixedModNeutralLoss%d'%seci:
+                pass
+            elif seckey == 'NeutralLoss%d'%seci:
+                pass
+            elif seckey == 'NeutralLoss%d_master'%seci:
+                pass
+            elif seckey == 'NeutralLoss%d_slave'%seci:
+                pass
+            elif seckey == 'NeutralLoss%d_'%seci:
+                pass
+            elif seckey == 'ReqPepNeutralLoss%d'%seci:
+                pass
+            elif seckey == 'PepNeutralLoss%d'%seci:
+                pass
+            else:
+                secval = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, seckey)
+                if len(seckey) == 1 or '_term' in seckey:
+                    self.groupMasses[seckey.lower()] = secval
+                else:
+                    self.elementalMasses[seckey.lower()] = secval
+            seci+=1
+            seckey = self.resfile.enumerateSectionKeys(msparser.ms_mascotresfile.SEC_MASSES,seci) 
+        if not self.elementalMasses['electron']:
+            self.elementalMasses['electron'] = 0.000549        
+        modind=1
+        mod = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, "delta%d"%modind)
+        while mod:
+            print mod
+            modind+=1
+            mod = self.resfile.getSectionValueStr(msparser.ms_mascotresfile.SEC_MASSES, "delta%d"%modind)
+        self.aahelper = msparser.ms_aahelper(self.resfile, "enzymes.txt")
+        self.aahelper.setMasses(self.massFile)
+        self.aahelper.setAvailableModifications(self.vecFixed,self.vMods)
+        
         self.numHits = self.results.getNumberOfHits()
+        self.cRules = set([msparser.ms_fragmentationrules.FRAG_IMMONIUM,msparser.ms_fragmentationrules.FRAG_INTERNAL_YA,msparser.ms_fragmentationrules.FRAG_INTERNAL_YB])
+        self.fragRuleMapping = {msparser.ms_fragmentationrules.FRAG_IMMONIUM: 'immonium ion',
+                                msparser.ms_fragmentationrules.FRAG_A_SERIES: 'a ion',
+                                msparser.ms_fragmentationrules.FRAG_A_MINUS_NH3: 'a ion - NH3',
+                                msparser.ms_fragmentationrules.FRAG_A_MINUS_H2O: 'a ion - H2O',
+                                msparser.ms_fragmentationrules.FRAG_B_SERIES: 'b ion',
+                                msparser.ms_fragmentationrules.FRAG_B_MINUS_NH3: 'b ion - NH3',
+                                msparser.ms_fragmentationrules.FRAG_B_MINUS_H2O: 'b ion - H2O',
+                                msparser.ms_fragmentationrules.FRAG_C_SERIES: 'c ion',
+                                msparser.ms_fragmentationrules.FRAG_X_SERIES: 'x ion',
+                                msparser.ms_fragmentationrules.FRAG_Y_SERIES: 'y ion',
+                                msparser.ms_fragmentationrules.FRAG_Y_MINUS_NH3: 'y ion - NH3',
+                                msparser.ms_fragmentationrules.FRAG_Y_MINUS_H2O: 'y ion - H2O',
+                                msparser.ms_fragmentationrules.FRAG_Z_SERIES: 'z ion',
+                                msparser.ms_fragmentationrules.FRAG_INTERNAL_YA: 'internal ya ion',
+                                msparser.ms_fragmentationrules.FRAG_INTERNAL_YB: 'internal yb ion',
+                                msparser.ms_fragmentationrules.FRAG_Z_PLUS_1: 'z+1 ion',
+                                msparser.ms_fragmentationrules.FRAG_D_SERIES: 'd ion',
+                                msparser.ms_fragmentationrules.FRAG_V_SERIES: 'v ion',
+                                msparser.ms_fragmentationrules.FRAG_W_SERIES: 'w ion',
+                                msparser.ms_fragmentationrules.FRAG_Z_PLUS_2: 'z+2 ion'
+                                }
         self.scanMap = {}
         
     def __iter__(self):
@@ -711,18 +853,68 @@ class MascotDATIterator(object):
                     inputQuery = msparser.ms_inputquery(self.resfile,query)
                     stitle = inputQuery.getStringTitle(True)
                     if full:
-                        ions1 = inputQuery.getStringIons1()
-                        ions2 = inputQuery.getStringIons2()
-                        ions3 = inputQuery.getStringIons3()
-                        if ions1:
-                            for mz,intensity in [mzint.split(':') for mzint in ions1.split(',')]:
-                                scanObj.scans.append((float(mz),float(intensity)))
-                        if ions2:
-                            for mz,intensity in [mzint.split(':') for mzint in ions2.split(',')]:
-                                scanObj.scans.append((float(mz),float(intensity)))
-                        if ions3:
-                            for mz,intensity in [mzint.split(':') for mzint in ions3.split(',')]:
-                                scanObj.scans.append((float(mz),float(intensity)))
+                        for ionIndex in xrange(1,4):
+                            for peakIndex in xrange(inputQuery.getNumberOfPeaks(ionIndex)):
+                                scanObj.scans.append((inputQuery.getPeakMass(ionIndex,peakIndex),float(inputQuery.getPeakIntensity(ionIndex,peakIndex))))
+                        ionsUsed = pep.getSeriesUsedStr()
+                        aaHelperStr = pep.getComponentStr()
+                        if not aaHelperStr:
+                            aaHelperStr = "1"
+                        rules = [int(ruleNum) for ruleNum in self.sparams.getRULES().split(',')];
+                        rules.sort()
+                        chargeRule = 0
+                        matched = {'labels':[],'m/z': [], 'intensity': [], 'error': [], 'series': [], 'start': [], 'end': [], 'losses': [], 'charge': []}
+                        for rule in (int(arule) for arule in rules):
+#                            print 'looking at rule',rule
+#                            print 'crules',self.cRules
+                            if rule == 1:
+                                chargeRule = 1
+                            elif rule == 2 or rule == 3:
+                                if (rule == 2 and charge >1) or (rule == 3 and charge > 2):
+                                    chargeRule = 2
+                            else:
+                                for chargeState in xrange(charge+1):
+#                                    print 'checking chargestate',chargeState,'with chargerule',chargeRule,'on rule',rule
+                                    if (chargeState == 1 and chargeRule == 1) or (chargeState == 2 and chargeRule == 2) and rule not in self.cRules:
+                                        frags = msparser.ms_fragmentvector()
+                                        errs = msparser.ms_errs()
+                                        #print pep, rule, chargeState, 0, pep.getMrCalc(), self.sparams.getMassType(), frags, errs
+                                        self.aahelper.setMasses(self.massFile)
+                                        self.aahelper.setAvailableModifications(self.vecFixed,self.vMods)
+                                        fres = self.aahelper.calcFragmentsEx(pep, rule, chargeState, 0, pep.getMrCalc(), self.sparams.getMassType(), frags, errs)
+                                        if not fres:
+                                            print 'no fragments made'
+                                            print frags
+                                            print errs.getLastErrorString()
+                                        else:
+                                            frags.addExperimentalData(self.resfile, query)
+                                            for frag in (frags.getFragmentByNumber(fragIndex) for fragIndex in xrange(frags.getNumberOfFragments())):
+                                                if frag.getMatchedIonMass() > 0:
+                                                    if frag.isInternal():
+                                                        startSite = frag.getStart()
+                                                        endSite = frag.getEnd() 
+                                                    else:
+                                                        startSite = frag.getColumn()
+                                                        endSite = startSite+len(peptide)
+                                                    fmass = frag.getMatchedIonMass()
+                                                    fint = frag.getMatchedIonIntensity()
+                                                    error = frag.getMatchedIonMass()-frag.getMass()
+                                                    matched['labels'].append(frag.getLabel())
+                                                    matched['m/z'].append(fmass)
+                                                    matched['intensity'].append(fint)
+                                                    matched['error'].append(error)
+                                                    matched['series'].append(frag.getSeriesName())
+                                                    matched['start'].append(startSite)
+                                                    matched['end'].append(endSite)
+                                                    matched['losses'].append(frag.getNeutralLoss())
+                                                    matched['charge'].append(chargeState)
+                                            try:
+                                                fragname = self.fragRuleMapping[rule]
+                                            except KeyError:
+                                                fragname = ""
+                                            print 'fragment name',fragname
+                        scanObj.matched = matched
+#                        print matched
                     specId = self.specParse.search(stitle).group(1)
                     scanObj.id = specId
                     self.scanMap[hit,rank] = scanObj
@@ -736,13 +928,9 @@ class MascotDATIterator(object):
     
     def getProgress(self):
         return self.hit*100/self.numHits
-    
-#for scan in MascotDATIterator('/home/chris/Individualome/Mascot/UnassignedSpectra/6FHg19/F010466.dat'):
-#    if scan:
-#        print scan
             
 class ThermoMSFIterator(object):
-    def __init__(self, filename):
+    def __init__(self, filename, clvl=1,srank=1):
         if isinstance(filename,(str,unicode)):
             self.f = open(filename, 'rb')
         else:
@@ -771,17 +959,17 @@ class ThermoMSFIterator(object):
         for i in self.cur.fetchall():
             self.mods[i[0]] = i[1:]
         try:
-            sql = 'select COUNT(distinct p.SpectrumID) from peptides p where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1 and p.SearchEngineRank = 1'
+            sql = 'select COUNT(distinct p.SpectrumID) from peptides p where p.PeptideID IS NOT NULL and p.ConfidenceLevel <= %d and p.SearchEngineRank <= %d'%(clvl,srank)
             self.nrows = self.conn.execute(sql).fetchone()[0]
             #sql = 'select sp.spectrum,p.ConfidenceLevel,p.SearchEngineRank,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
-            sql = 'select GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.SearchEngineRank),GROUP_CONCAT(p.Sequence),GROUP_CONCAT(p.PeptideID), GROUP_CONCAT(pp.ProteinID), p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1 and p.SearchEngineRank = 1 GROUP BY p.SpectrumID'
+            sql = 'select GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.SearchEngineRank),GROUP_CONCAT(p.Sequence),GROUP_CONCAT(p.PeptideID), GROUP_CONCAT(pp.ProteinID), p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL and p.ConfidenceLevel <= %d and p.SearchEngineRank <= %d GROUP BY p.SpectrumID'%(clvl,srank)
             self.cur.execute(sql)
         except sqlite3.OperationalError:
             print 'error'
-            sql = 'select COUNT(distinct p.SpectrumID) from peptides p where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1'
+            sql = 'select COUNT(distinct p.SpectrumID) from peptides p where p.PeptideID IS NOT NULL and p.ConfidenceLevel <= %d'%clvl
             self.nrows = self.conn.execute(sql).fetchone()[0]
             #sql = 'select sp.spectrum,p.ConfidenceLevel,p.ConfidenceLevel,p.Sequence,p.PeptideID,pp.ProteinID,p.SpectrumID from spectra sp left join peptides p on (p.SpectrumID=sp.UniqueSpectrumID) left join peptidesproteins pp on (p.PeptideID=pp.PeptideID) where p.PeptideID IS NOT NULL'
-            sql = 'select GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.Sequence),GROUP_CONCAT(p.PeptideID), GROUP_CONCAT(pp.ProteinID), p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL and p.ConfidenceLevel = 1 GROUP BY p.SpectrumID'
+            sql = 'select GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.ConfidenceLevel),GROUP_CONCAT(p.Sequence),GROUP_CONCAT(p.PeptideID), GROUP_CONCAT(pp.ProteinID), p.SpectrumID, sh.Charge, sh.RetentionTime, sh.FirstScan, sh.LastScan, mp.FileID from peptides p join peptidesproteins pp on (p.PeptideID=pp.PeptideID) left join spectrumheaders sh on (sh.SpectrumID=p.SpectrumID) left join masspeaks mp on (sh.MassPeakID=mp.MassPeakID) where p.PeptideID IS NOT NULL and p.ConfidenceLevel <= %d GROUP BY p.SpectrumID'%clvl
             self.cur.execute(sql)
         self.index = 0
             
@@ -859,7 +1047,9 @@ class ThermoMSFIterator(object):
                         fileName = int(finfo[1])
                         #msScanSum = finfo[5]
                         fName = self.sFileMap[fileName]
-                        sid = '%s.%s.%s'%(fName, finfo[2],finfo[2])
+                        scanIndex = finfo.index(' ScanNumber=')+1
+                        sid = '%s.%s.%s'%(fName, finfo[scanIndex],finfo[scanIndex])
+                        #sid = '%s.%s.%s'%(fName, finfo[2],finfo[2])
                         scanObj.title = sid
                         scanObj.id = sid
                         stage=1

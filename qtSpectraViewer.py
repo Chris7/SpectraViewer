@@ -1076,7 +1076,7 @@ class ViewerTab(QWidget):
                 toAdd = subnode.data
                 nid = toAdd[col]#group on peptide by default
                 newNode = QTreeWidgetItem()
-                [newNode.setText(i,str(v)) for i,v in enumerate(toAdd)]
+                [newNode.setText(ind,str(val)) for ind,val in enumerate(toAdd)]
                 newNode.fileName = subnode.fileName
                 newNode.subnodes = []
                 node = objMap.get(nid)
@@ -1168,21 +1168,22 @@ class ViewerTab(QWidget):
                 scan = self.parent.pepFiles[path].getScan(title,kwrds['hitId'], kwrds['rank'])
             if not scan:
                 return
-            mods = scan.getModifications()
-            self.precursor = scan.mass
-            mz = scan.scans
-            x = []
-            y = []
-            for i in mz:
-                x.append(float(i[0]))
-                y.append(float(i[1]))
-            self.pepSequence = scan.peptide
-            a = figureIons.figureIons(self.pepSequence,scan.charge,mods, self.getTolerance())
+            a = figureIons.figureIons(scan, self.getTolerance())
+#            mods = scan.getModifications()
+#            self.precursor = scan.mass
+#            mz = scan.scans
+#            x = []
+#            y = []
+#            for i in mz:
+#                x.append(float(i[0]))
+#                y.append(float(i[1]))
+#            self.pepSequence = scan.peptide
+            #a = figureIons.figureIons(self.pepSequence,scan.charge,mods, self.getTolerance())
             self.draw.cleanup()
             self.draw.setTitle(title)
-            self.plotIons(x,y,a)
+            self.plotIons(a)
             if self.draw.ionView['all']:
-                self.draw.plotXY(x,y)
+                self.draw.plotXY(scan)
         elif self.getFileType(path) == 'spectra':
             try:
                 scan = self.parent.mgfFiles[path].getScan(title)
@@ -1201,9 +1202,10 @@ class ViewerTab(QWidget):
             self.draw.cleanup()
             self.draw.plotXY(x,y)
         
-    def plotIons(self, x,y,a):
-        ionList = a.assignPeaks(x,y)
-        self.draw.plotIons([i[0] for i in ionList])
+    def plotIons(self, a):
+        ionList = a.assignPeaks()
+        self.pepSequence = a.scan.peptide
+        self.draw.plotIons(ionList)
         self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)
 
 
@@ -1354,7 +1356,7 @@ class DrawFrame(PlotPanel):
         for i in peaks:
             if not i:
                 continue
-            mz,inten,fragType, fragNum,charge,loss,aa = i
+            mz,inten,fragType, fragNum,charge,loss,aa = i[0]
             if self.ionView[fragType]:
                 if not self.ionView['>2'] and charge > 2:
                     continue
@@ -1363,10 +1365,10 @@ class DrawFrame(PlotPanel):
                 self.points.append((mz,inten,fragType, fragNum,charge,loss,aa))
         self.draw()
    
-    def plotXY(self, xco, yco):
-        self.x = xco
-        self.y = yco
-        for x,y in zip(xco,yco):
+    def plotXY(self, scan):
+        self.x = [i[0] for i in scan.scans]
+        self.y = [i[1] for i in scan.scans]
+        for x,y in zip(self.x,self.y):
             self.points.append((x,y,'spectra', None,None,None,None))
         self.draw()
 

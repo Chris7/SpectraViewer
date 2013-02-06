@@ -60,8 +60,10 @@ mod_weights = {'h': (1.007825, 0),
                'oh': (17.00274, 0)
                }
 
-lossMasses = {'K': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),(mod_weights['h2o'][0],('b',),'+h2o')),
-              'R': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),(mod_weights['h2o'][0],('b',),'+h2o')),
+lossMasses = {'K': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),),
+              'R': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),),
+              'Q': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),),
+              'N': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),),
               'S': ((-1*mod_weights['h2o'][0],('b'),'-h2o'),),
               'T': ((-1*mod_weights['h2o'][0],('b'),'-h2o'),),
               'D': ((-1*mod_weights['h2o'][0],('b','y'),'-h2o'),),
