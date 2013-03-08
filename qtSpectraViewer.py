@@ -16,7 +16,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-import fileIterators, operator, os, re, xml.etree.cElementTree as etree, random, matplotlib as mpl, figureIons, sys, masses
+import fileIterators, operator, os, re, xml.etree.cElementTree as etree, random, matplotlib as mpl, figureIons, sys, masses, tempfile
+from StringIO import StringIO
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavigationToolbar
 from PyQt4.QtCore import *
@@ -910,7 +911,7 @@ class ViewerTab(QWidget):
         self.vl.addWidget(self.progress)
         self.splitter.setOrientation(Qt.Vertical)
         self.splitter.setParent(self)
-        self.peptidePanel = PeptidePanel(self)
+        #self.peptidePanel = PeptidePanel(self)
         self.draw = DrawFrame(self)
         self.searchBox = QLineEdit()
         self.searchBox.editingFinished.connect(self.onSearch)
@@ -947,7 +948,7 @@ class ViewerTab(QWidget):
         self.searchGroupLayout.addLayout(self.filterBoxLayout,1,1,1,4,Qt.AlignLeft)
         self.searchGroup.setLayout(self.searchGroupLayout)
         
-        self.splitter.addWidget(self.peptidePanel)
+        #self.splitter.addWidget(self.peptidePanel)
         self.splitter.addWidget(self.draw)
         self.splitter.addWidget(self.searchGroup)#search box
         
@@ -1205,30 +1206,261 @@ class ViewerTab(QWidget):
     def plotIons(self, a):
         ionList = a.assignPeaks()
         self.pepSequence = a.scan.peptide
+        self.draw.peptide = self.pepSequence
+        self.draw.ionList = ionList
+        self.draw.revTypes = set([])
+        self.draw.ions = [i[0] for i in ionList]
+        self.draw.errors = [i[1] for i in ionList]
         self.draw.plotIons(ionList)
-        self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)
+        #self.draw.peptidePanel.plotPeptide(self.pepSequence,ionList)
 
+class LegendArtist(mpl.legend_handler.Rectangle):
+    pass
+
+class PlotCanvas(FigureCanvas):
+    def __init__(self, figure):
+        FigureCanvas.__init__(self, figure)
+        
+    def onDraw(self, event):
+        qp = QPainter(event.canvas)
+        self.ions = [i[0] for i in self.ionList]
+        self.errors = [i[1] for i in self.ionList]
+        self.errorboxes = []
+        w,h = self.width(), self.height()
+        qp.begin(self)
+        qp.setPen(QColor(255,0,0))
+        font = QFont()
+        fm = QFontMetrics(font)
+        tpos=0
+        lx=0
+        ly=0
+        tw=0
+        th=0
+        fsize = 1
+        for i in self.peptide:
+            tsize = fm.size(Qt.TextSingleLine,i)
+            pw = tsize.width()
+            ph = tsize.height()
+            if pw > tw:
+                tw = pw
+                pp = i
+            if ph > th:
+                th = pw
+                pp = i
+        isize=1
+        font.setPointSize(isize)
+        fm = QFontMetrics(font)
+        tsize = fm.size(Qt.TextSingleLine,"10")
+        tw, th = tsize.width(),tsize.height()
+        while th < h*1/10:
+            isize+=1
+            font.setPointSize(isize)
+            fm = QFontMetrics(font)
+            tsize = fm.size(Qt.TextSingleLine,"10")
+            tw,th = tsize.width(),tsize.height()
+        ih=th
+        fsize=1
+        while (th*1.25+ih*2 <= h*1/2) and (tw*len(self.peptide) < w*1/2):
+            font.setPointSize(fsize)
+            fm = QFontMetrics(font)
+            try:
+                tsize = fm.size(Qt.TextSingleLine,pp)
+                tw,th = tsize.width(),tsize.height()
+            except IndexError:
+                break
+            fsize+=1
+        totalw = len(self.peptide)*tw
+        font.setPointSize(isize)
+        fm = QFontMetrics(font)
+        tsize = fm.size(Qt.TextSingleLine,"x")
+        ixw,ixh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"y")
+        iyw,iyh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"z")
+        izw,izh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"a")
+        iaw,iah = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"b")
+        ibw,ibh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"c")
+        icw,ich = tsize.width(),tsize.height()
+        cy = h/2
+        lx = w/2-totalw/2
+        toDraw = {}
+        sLen = len(self.peptide)
+        for entry,error in zip(self.ions,self.errors):
+            fType = entry[2]
+            index = entry[3]
+            idesc = '%s%d%s'%(fType,index,entry[5]) if entry[5] else '%s%d'%(fType,index)
+            try:
+                toDraw[index].append((fType,error,idesc))
+            except KeyError:
+                toDraw[index] = [(fType,error,idesc)]
+                
+        #draw our error line on the right (a black line up and down)
+        esize = self.width()/20
+        #"normalize" our error to the width so a delta of 0.0001 actually has pixels 
+        escale = esize/self.parent.getTolerance()
+        elx = self.width()-2*esize
+        ely = (self.height()*9/10)/len(self.peptide)
+        qp.drawLine(QLineF(elx,0,elx,h))
+        #draw some axes for the top
+        qp.drawLine(QLineF(elx-esize,0,elx+esize,0))
+        font.setPointSize(isize)
+        qp.setFont(font)
+        tsize = fm.size(Qt.TextSingleLine,str(self.parent.getTolerance()))
+        tw,th = tsize.width(),tsize.height()
+        qp.drawText(QPointF(elx-esize-tw,th),str(self.parent.getTolerance()))
+        qp.drawText(QPointF(elx+esize,th),str(self.parent.getTolerance()))
+        for i,v in enumerate(self.peptide):
+            font.setPointSize(fsize)
+            qp.setFont(font)
+            fm = QFontMetrics(font)
+            tsize = fm.size(Qt.TextSingleLine,v)
+            tw,th = tsize.width(),tsize.height()
+            qp.setPen(QColor((0,0,0)))
+            qp.drawText(QPoint(lx-tw/2,cy), v)
+            if i==sLen-1:
+                break
+            font.setPointSize(isize)
+            qp.setFont(font)
+            qp.drawLine(QLineF(lx+tw/2,cy-th/2-ixh/2-iyh-izh,lx+tw/2,cy+th/2+iah+ibh+ich/2))
+            qp.setPen(QColor((255,0,255)))
+            ind = str(sLen-i-1)
+            fm = QFontMetrics(font)
+            tsize = fm.size(Qt.TextSingleLine,ind)
+            iw,ih = tsize.width(),tsize.height()
+            qp.drawText(QPoint(lx+tw/2,cy-ixh/2-iyh-izh-ih),ind)
+            qp.drawText(QPoint(lx+tw/2,cy+th/2+iah+ibh+ich/2),str(i+1))
+            try:
+                todraw = toDraw[i+1]
+                for fragType,error,errortype in todraw:
+                    esize = error*escale
+                    if fragType == 'a':
+                        qp.setPen(QColor((255,0,0)))
+                        ay = cy+th/2
+                        qp.drawLine(QLineF(lx,ay,lx+tw/2,ay))
+                        qp.setPen(QColor(255,0,0))
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                        qp.drawText(QPoint(lx-iw/2,ay),"a")
+                    elif fragType == 'b':
+                        by = cy+th/2+iah
+                        qp.setPen(QColor((255,0,0)))
+                        qp.drawLine(QLineF(lx,by,lx+tw/2,by))
+                        qp.setPen(QColor(255,0,0))
+                        qp.drawText(QPoint(lx-iw/2,by), "b")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                    elif fragType == 'c':
+                        cy2 = cy+th/2+iah+ibh
+                        qp.setPen(QColor((255,0,0)))
+                        qp.drawLine(QLineF(lx,cy2,lx+tw/2,cy2))
+                        qp.setPen(QColor(255,0,0))
+                        qp.drawText(QPoint(lx-iw/2,cy2), "c")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+            except KeyError:
+                pass
+            try:
+                todraw = toDraw[int(ind)]
+                for fragType,error,errortype in todraw:
+                    esize = error*escale
+                    if fragType == 'x':
+                        #we're x/y/z ions, we go in reverse
+                        xy = cy-th/2-izh-iyh
+                        qp.setPen(QColor((0,0,255)))
+                        qp.drawLine(QLineF(lx+tw,xy,lx+tw/2,xy))
+                        qp.setPen(QColor(0,0,255))
+                        qp.drawText(QPoint(lx+tw,xy),"x")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                    elif fragType == 'y':
+                        #we're x/y/z ions, we go in reverse
+                        yy = cy-th/2-ixh
+                        qp.setPen(QColor((0,0,255)))
+                        qp.drawLine(QLineF(lx+tw,yy,lx+tw/2,yy))
+                        qp.setPen(QColor(0,0,255))
+                        qp.drawText(QPoint(lx+tw,yy), "y")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                    elif fragType == 'z':
+                        #we're x/y/z ions, we go in reverse
+                        zy = cy-th/2
+                        qp.setPen(QColor((0,0,255)))
+                        qp.drawLine(QLineF(lx+tw,zy,lx+tw/2,zy))
+                        qp.setPen(QColor(0,0,255))
+                        qp.drawText(QPoint(lx+tw,zy), "z")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+            except KeyError:
+                pass
+            lx+=tw+5
+        qp.end()
 
 class PlotPanel(QWidget):
     def __init__( self, parent):
         QWidget.__init__(self)
         self.dpi = 100
         self.figure = mpl.figure.Figure((3.0, 2.0), dpi = self.dpi)
-        self.canvas = FigureCanvas(self.figure)
+        self.canvas = PlotCanvas(self.figure)#FigureCanvas(self.figure)
         self.canvas.setParent(parent)
         self.parent = parent
         # initialize matplotlib stuff
         self.canvas.mpl_connect('button_press_event', self.onMouseDown)
         self.canvas.mpl_connect('button_release_event', self.onMouseRelease)
         self.toolbar = NavigationToolbar(self.canvas, self)
+#        for i in self.toolbar.actions():
+#            if i.iconText() == "Save":
+#                i.triggered.disconnect()
+#                i.triggered.connect(self.saveFigure)
         self.toolbar.coordinates = None
         self.vbox = QVBoxLayout(self)
-        self.peptidePanel = self.parent.peptidePanel
+        #self.peptidePanel = self.parent.peptidePanel
         self.vbox.addWidget(self.toolbar)
         self.vbox.addWidget(self.canvas)
         self.canvas.setGeometry(QRect(10, 150, 490, 390))
         self.axes = self.figure.add_subplot(111)
-        self.mouse = 0
+        self.mouse = 0        
+        
+#    def saveFigure(self, *args):
+#        filetypes = self.canvas.get_supported_filetypes_grouped()
+#        sorted_filetypes = filetypes.items()
+#        sorted_filetypes.sort()
+#        default_filetype = self.canvas.get_default_filetype()
+#
+#        start = "image." + default_filetype
+#        filters = []
+#        selectedFilter = None
+#        for name, exts in sorted_filetypes:
+#            exts_list = " ".join(['*.%s' % ext for ext in exts])
+#            filter = '%s (%s)' % (name, exts_list)
+#            if default_filetype in exts:
+#                selectedFilter = filter
+#            filters.append(filter)
+#        filters = ';;'.join(filters)
+
+#        fname = self.toolbar._getSaveFileName(self, "Choose a filename to save to",
+#                                        start, filters, selectedFilter)
+#        if fname:
+#            try:
+#                self.canvas.print_figure( unicode(fname) )
+#            except Exception, e:
+#                QtGui.QMessageBox.critical(
+#                    self, "Error saving file", str(e),
+#                    QtGui.QMessageBox.Ok, QtGui.QMessageBox.NoButton)
 
     def onMouseDown(self, event):
         self.mouse = 1
@@ -1340,6 +1572,219 @@ class DrawFrame(PlotPanel):
         self.etolerance.editingFinished.connect(self.onToleranceEdit)
         self.toolbar.addWidget(self.etolerance)
         
+    def drawPeptide(self):
+        if not self.peptide:
+            return
+        w,h = self.width(), self.height()
+        self.errorboxes = []
+        pix = QPixmap(w,h)
+        pix.fill(QColor(255,255,255))
+        qp = QPainter()
+        qp.begin(pix)
+        qp.setPen(QColor(255,0,0))
+        font = QFont()
+        fm = QFontMetrics(font)
+        tpos=0
+        lx=0
+        ly=0
+        tw=0
+        th=0
+        fsize = 1
+        for i in self.peptide:
+            tsize = fm.size(Qt.TextSingleLine,i)
+            pw = tsize.width()
+            ph = tsize.height()
+            if pw > tw:
+                tw = pw
+                pp = i
+            if ph > th:
+                th = pw
+                pp = i
+        isize=1
+        msize=18
+        font.setPointSize(isize)
+        fm = QFontMetrics(font)
+        tsize = fm.size(Qt.TextSingleLine,"10")
+        tw, th = tsize.width(),tsize.height()
+        while th < h*1/10 and isize<msize:
+            isize+=1
+            font.setPointSize(isize)
+            fm = QFontMetrics(font)
+            tsize = fm.size(Qt.TextSingleLine,"10")
+            tw,th = tsize.width(),tsize.height()
+        ih=th
+        fsize=1
+        while (th*1.25+ih*2 <= h*1/2):# and (tw*len(self.peptide)<w*9/10):
+            font.setPointSize(fsize)
+            fm = QFontMetrics(font)
+            try:
+                tsize = fm.size(Qt.TextSingleLine,pp)
+                tw,th = tsize.width(),tsize.height()
+            except IndexError:
+                break
+            fsize+=1
+        totalw = len(self.peptide)*tw
+        pix.scaled(totalw,h)
+        font.setPointSize(isize)
+        fm = QFontMetrics(font)
+        tsize = fm.size(Qt.TextSingleLine,"x")
+        ixw,ixh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"y")
+        iyw,iyh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"z")
+        izw,izh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"a")
+        iaw,iah = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"b")
+        ibw,ibh = tsize.width(),tsize.height()
+        tsize = fm.size(Qt.TextSingleLine,"c")
+        icw,ich = tsize.width(),tsize.height()
+        cy = h/2
+        lx = w/20#w#w/2-totalw/2
+        toDraw = {}
+        sLen = len(self.peptide)
+        for entry,error in zip(self.ions,self.errors):
+            fType = entry[2]
+            index = entry[3]
+            idesc = '%s%d%s'%(fType,index,entry[5]) if entry[5] else '%s%d'%(fType,index)
+            try:
+                toDraw[index].append((fType,error,idesc))
+            except KeyError:
+                toDraw[index] = [(fType,error,idesc)]
+                
+        #draw our error line on the right (a black line up and down)
+        esize = self.width()/10
+        #"normalize" our error to the width so a delta of 0.0001 actually has pixels 
+        escale = esize/self.parent.getTolerance()
+        elx = self.width()-2*esize
+        ely = (self.height()*9/10)/len(self.peptide)
+#        qp.drawLine(QLineF(elx,0,elx,h))
+        #draw some axes for the top
+#        qp.drawLine(QLineF(elx-esize,0,elx+esize,0))
+        font.setPointSize(isize)
+        qp.setFont(font)
+        tsize = fm.size(Qt.TextSingleLine,str(self.parent.getTolerance()))
+        tw,th = tsize.width(),tsize.height()
+#        qp.drawText(QPointF(elx-esize-tw,th),str(self.parent.getTolerance()))
+#        qp.drawText(QPointF(elx+esize,th),str(self.parent.getTolerance()))
+        for i,v in enumerate(self.peptide):
+            font.setPointSize(fsize)
+            qp.setFont(font)
+            fm = QFontMetrics(font)
+            tsize = fm.size(Qt.TextSingleLine,v)
+            tw,th = tsize.width(),tsize.height()
+            qp.setPen(QColor((0,0,0)))
+            qp.drawText(QPoint(lx-tw/2,cy), v)
+            if i==sLen-1:
+                break
+            font.setPointSize(isize)
+            qp.setFont(font)
+            qp.drawLine(QLineF(lx+tw/2,cy-th/2-ixh/2-iyh-izh,lx+tw/2,cy+th/2+iah+ibh+ich/2))
+            qp.setPen(QColor((255,0,255)))
+            ind = str(sLen-i-1)
+            fm = QFontMetrics(font)
+            tsize = fm.size(Qt.TextSingleLine,ind)
+            iw,ih = tsize.width(),tsize.height()
+            qp.drawText(QPoint(lx+tw/2,cy-ixh/2-iyh-izh-ih),ind)
+            qp.drawText(QPoint(lx+tw/2,cy+th/2+iah+ibh+ich/2),str(i+1))
+            try:
+                todraw = toDraw[i+1]
+                for fragType,error,errortype in todraw:
+                    esize = error*escale
+                    if fragType == 'a':
+                        qp.setPen(QColor((255,0,0)))
+                        ay = cy+th/2
+                        qp.drawLine(QLineF(lx,ay,lx+tw/2,ay))
+                        qp.setPen(QColor(255,0,0))
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+#                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                        qp.drawText(QPoint(lx-iw/2,ay),"a")
+                    elif fragType == 'b':
+                        by = cy+th/2+iah
+                        qp.setPen(QColor((255,0,0)))
+                        qp.drawLine(QLineF(lx,by,lx+tw/2,by))
+                        qp.setPen(QColor(255,0,0))
+                        qp.drawText(QPoint(lx-iw/2,by), "b")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+#                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                    elif fragType == 'c':
+                        cy2 = cy+th/2+iah+ibh
+                        qp.setPen(QColor((255,0,0)))
+                        qp.drawLine(QLineF(lx,cy2,lx+tw/2,cy2))
+                        qp.setPen(QColor(255,0,0))
+                        qp.drawText(QPoint(lx-iw/2,cy2), "c")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+#                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+            except KeyError:
+                pass
+            try:
+                todraw = toDraw[int(ind)]
+                for fragType,error,errortype in todraw:
+                    esize = error*escale
+                    if fragType == 'x':
+                        #we're x/y/z ions, we go in reverse
+                        xy = cy-th/2-izh-iyh
+                        qp.setPen(QColor((0,0,255)))
+                        qp.drawLine(QLineF(lx+tw,xy,lx+tw/2,xy))
+                        qp.setPen(QColor(0,0,255))
+                        qp.drawText(QPoint(lx+tw,xy),"x")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+#                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                    elif fragType == 'y':
+                        #we're x/y/z ions, we go in reverse
+                        yy = cy-th/2-ixh
+                        qp.setPen(QColor((0,0,255)))
+                        qp.drawLine(QLineF(lx+tw,yy,lx+tw/2,yy))
+                        qp.setPen(QColor(0,0,255))
+                        qp.drawText(QPoint(lx+tw,yy), "y")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+#                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+                    elif fragType == 'z':
+                        #we're x/y/z ions, we go in reverse
+                        zy = cy-th/2
+                        qp.setPen(QColor((0,0,255)))
+                        qp.drawLine(QLineF(lx+tw,zy,lx+tw/2,zy))
+                        qp.setPen(QColor(0,0,255))
+                        qp.drawText(QPoint(lx+tw,zy), "z")
+                        errorBox = QRectF(elx-esize,ely*(i+1),3,3)
+#                        qp.drawRect(errorBox)
+                        errorBox.ion = errortype
+                        self.errorboxes.append(errorBox)
+            except KeyError:
+                pass
+            lx+=tw+5
+        qp.end()
+        byteArray = QByteArray()
+        buffer = QBuffer(byteArray)
+        buffer.open(QIODevice.WriteOnly)
+        pix.save(buffer, 'PNG')
+        stringIO = StringIO(byteArray)
+        stringIO.seek(0)
+        #tfile = open("C:\Users\Chris\SpectraViewer\A1.2012_06_07_12_20_00.t.xml.png","wb")#tempfile.NamedTemporaryFile()
+        tfile = tempfile.NamedTemporaryFile(suffix=".png", mode="wb", delete=False)
+        tfile.write(stringIO.buf)
+        tfile.close()
+        zlvl = len(self.peptide)/50.0
+        if zlvl<0.4:
+            zlvl=0.4
+        imagebox = mpl.offsetbox.OffsetImage(mpl._png.read_png(tfile.name),zoom=zlvl)
+        #place it in the middle
+        ab = mpl.offsetbox.AnnotationBbox(imagebox, [w/2,0],frameon=False)
+        ab.set_figure(self.canvas.figure)
+        ab.draggable()
+        self.subplot.axes.add_artist(ab)
+        os.remove(tfile.name)
+        
     def customLosses(self):
         CustomLossWidget(self.parent)
         
@@ -1398,7 +1843,7 @@ class DrawFrame(PlotPanel):
                 col=[0.0,0.0,1.0]
                 tcolor='b'
             elif fragType == 'spectra':
-                t='k'
+                tcolor='k'
                 col=[0.0,0.0,0.0] 
             else:
                 col=[1.0,0.0,0.0]
@@ -1411,7 +1856,7 @@ class DrawFrame(PlotPanel):
                 self.hitMapX[x].add((y,'m/z: %d Int: %d'%(x,y)))
             except KeyError:
                 self.hitMapX[x] = set([(y,'m/z: %d Int: %d'%(x,y))])
-            bar = self.subplot.bar(x,y,color=col,align='center')
+            bar = self.subplot.bar(x,y,color=tcolor,facecolor=tcolor,edgecolor=tcolor,align='center')
             if fragType == 'spectra':
                 bar[0].set_zorder(0)
             else:
@@ -1425,6 +1870,10 @@ class DrawFrame(PlotPanel):
                 self.subplot.text(x,y+hlen,txt,color=tcolor)
         self.subplot.axes.set_xbound(lower=0, upper=xmax+10)
         self.subplot.axes.set_ybound(lower=0, upper=ymax+20)
+        #leg = self.subplot.legend()#handler_map={bar:LegendArtist})
+        #print leg.get_legend_handler_map()
+        #leg.draggable()
+        self.drawPeptide()
         self.canvas.draw()
         
     def onMouseMove(self,event):
