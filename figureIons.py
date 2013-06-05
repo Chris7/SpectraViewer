@@ -174,7 +174,7 @@ class figureIons(object):
             aas = [self.sequence[i] for i in matchDict['start']]
             out = [((i,j,k,l,m,n,o),p) for (i,j,k,l,m,n,o,p) in zip(self.x, self.y, [p[0] for p in matchDict['series']], matchDict['start'],matchDict['charge'],matchDict['losses'],aas,matchDict['error'])]
             print out
-        except KeyError:
+        except AttributeError:
             self.predictPeaks()
             scan = self.scan
             mods = scan.getModifications()
