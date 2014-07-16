@@ -1,0 +1,93 @@
+<!doctype html>
+<!-- The Time Machine GitHub pages theme was designed and developed by Jon Rohan, on Feb 7, 2012. -->
+<!-- Follow him for fun. http://twitter.com/jonrohan. Tail his code on http://github.com/jonrohan -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+  <link rel="stylesheet" href="stylesheets/stylesheet.css" media="screen"/>
+  <link rel="stylesheet" href="stylesheets/pygment_trac.css"/>
+  <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+  <script type="text/javascript" src="javascripts/script.js"></script>
+
+  <title>Spectraviewer</title>
+  <meta name="description" content="A cross-platform viewer utilizing the QT SDK and pyqtgraph to visualize mass spectrometry peaklist files.  Also supported are opening of results from search engines from X!Tandem, Mascot, and Proteome Discoverer as well as raw spectra files.  The impetus for this project was a way to view mass spec data on linux since a majority of viewers were lacking.">
+
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+
+</head>
+
+<body>
+
+  <div class="wrapper">
+    <header>
+      <h1 class="title">Spectraviewer</h1>
+    </header>
+    <div id="container">
+      <p class="tagline">A cross-platform viewer utilizing the QT SDK and pyqtgraph to visualize mass spectrometry peaklist files.  Also supported are opening of results from search engines from X!Tandem, Mascot, and Proteome Discoverer as well as raw spectra files.  The impetus for this project was a way to view mass spec data on linux since a majority of viewers were lacking.</p>
+      <div id="main" role="main">
+        <div class="download-bar">
+        <div class="inner">
+          <a href="https://github.com/chrismit/SpectraViewer/tarball/master" class="download-button tar"><span>Download</span></a>
+          <a href="https://github.com/chrismit/SpectraViewer/zipball/master" class="download-button zip"><span>Download</span></a>
+          <a href="https://github.com/chrismit/SpectraViewer" class="code">View Spectraviewer on GitHub</a>
+        </div>
+        <span class="blc"></span><span class="trc"></span>
+        </div>
+        <article class="markdown-body">
+          <h1>
+<a name="spectraviewer" class="anchor" href="#spectraviewer"><span class="octicon octicon-link"></span></a>SpectraViewer</h1>
+
+<p>A cross-platform viewer to open up mass spec peaklist files.</p>
+
+<p>To use, simply drag and drop a file onto the program.  Multiple tabs are provided to allow for any number of files to be open concurrently.
+Dragging multiple files into a window will open all them at once for a combined view.
+Holding Control+dropping a file will append it to the current view (this way, you can even mix &amp; match file types).</p>
+
+<p>The current goal is functionality -- elegance can come later.</p>
+
+<p>Installation:
+You need the following installed:</p>
+
+<p>PyQt4 -- <a href="http://pyqt.sourceforge.net/Docs/PyQt4/">http://pyqt.sourceforge.net/Docs/PyQt4/</a></p>
+
+<p>pyqtgraph -- <a href="http://www.pyqtgraph.org/">http://www.pyqtgraph.org/</a></p>
+
+<p>The rest can be done with:
+pip install -r requirements.txt</p>
+
+<p>Supported:
+mgf files - on first load the mgf file will be indexed for random access.  This is a one
+    time cost, but it is worth it.</p>
+
+<p>X!Tandem xml files</p>
+
+<p>Proteome Discovered .msf files - These load very fast, anyone used to PD's abysmal (and unthreaded) speed will appreciate this</p>
+
+<p>MZML/PepXML</p>
+
+<p>Mascot DAT Files</p>
+        </article>
+      </div>
+    </div>
+    <footer>
+      <div class="owner">
+      <p><a href="https://github.com/chrismit" class="avatar"><img src="https://avatars1.githubusercontent.com/u/2047629?s=60" width="48" height="48"/></a> <a href="https://github.com/chrismit">chrismit</a> maintains <a href="https://github.com/chrismit/SpectraViewer">Spectraviewer</a></p>
+
+
+      </div>
+      <div class="creds">
+        <small>This page generated using <a href="http://pages.github.com/">GitHub Pages</a><br/>theme by <a href="https://twitter.com/jonrohan/">Jon Rohan</a></small>
+      </div>
+    </footer>
+  </div>
+  <div class="current-section">
+    <a href="#top">Scroll to top</a>
+    <a href="https://github.com/chrismit/SpectraViewer/tarball/master" class="tar">tar</a><a href="https://github.com/chrismit/SpectraViewer/zipball/master" class="zip">zip</a><a href="" class="code">source code</a>
+    <p class="name"></p>
+  </div>
+
+  
+</body>
+</html>
