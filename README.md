@@ -12,6 +12,7 @@ The current goal is functionality -- elegance can come later.
 Installation:
 You need the following installed:
 PyQt4 -- install instructions are here: http://pyqt.sourceforge.net/Docs/PyQt4/
+pyqtgraph
 
 The rest can be done with:
 pip install -r requirements.txt
