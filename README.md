@@ -9,6 +9,13 @@ Holding Control+dropping a file will append it to the current view (this way, yo
 
 The current goal is functionality -- elegance can come later.
 
+Installation:
+You need the following installed:
+PyQt4 -- install instructions are here: http://pyqt.sourceforge.net/Docs/PyQt4/
+
+The rest can be done with:
+pip install -r requirements.txt
+
 Supported:
 mgf files - on first load the mgf file will be indexed for random access.  This is a one
 	time cost, but it is worth it.
@@ -28,6 +35,5 @@ GFF files - this is a feature that is currently, and probably will remain only u
 Soon to be added:
 
 dta files
-mzXML files
 some simple higher level analysis tools like box plots & venn diagrams
 selected spectra export

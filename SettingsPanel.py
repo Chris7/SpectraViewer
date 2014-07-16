@@ -117,7 +117,7 @@ class Ui_Dialog(object):
 
     def retranslateUi(self, Dialog):
         Dialog.setWindowTitle(QtGui.QApplication.translate("Dialog", "Dialog", None, QtGui.QApplication.UnicodeUTF8))
-        self.label.setText(QtGui.QApplication.translate("Dialog", "Default Mass Error (da)", None, QtGui.QApplication.UnicodeUTF8))
+        self.label.setText(QtGui.QApplication.translate("Dialog", "Default Mass Error (ppm)", None, QtGui.QApplication.UnicodeUTF8))
         self.label_3.setText(QtGui.QApplication.translate("Dialog", "Amino Acid", None, QtGui.QApplication.UnicodeUTF8))
         self.aaBox.setItemText(0, QtGui.QApplication.translate("Dialog", "A", None, QtGui.QApplication.UnicodeUTF8))
         self.aaBox.setItemText(1, QtGui.QApplication.translate("Dialog", "C", None, QtGui.QApplication.UnicodeUTF8))

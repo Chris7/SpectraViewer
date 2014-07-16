@@ -57,7 +57,9 @@ mod_weights = {'h': (1.007825, 0),
                'cho': (29.002739665, 0),
                'nh2': (16.01872407, 0),
                'co': (27.99491463, 0),
-               'oh': (17.00274, 0)
+               'oh': (17.00274, 0),
+               'h3po4': (97.977137, 0),
+               'hpo3': (95.961487, 0),
                }
 
 lossMasses = {'K': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),),
@@ -67,4 +69,14 @@ lossMasses = {'K': ((-1*mod_weights['nh3'][0],('a','b','y'),'-nh3'),),
               'S': ((-1*mod_weights['h2o'][0],('b'),'-h2o'),),
               'T': ((-1*mod_weights['h2o'][0],('b'),'-h2o'),),
               'D': ((-1*mod_weights['h2o'][0],('b','y'),'-h2o'),),
-              'E': ((-1*mod_weights['h2o'][0],('b','y'),'-h2o'),)}
+              'E': ((-1*mod_weights['h2o'][0],('b','y'),'-h2o'),),
+              'Y': ((-1*mod_weights['h3po4'][0],('a', 'b','y'),'-h3po4'),),
+              'S': ((-1*mod_weights['h3po4'][0],('a', 'b','y'),'-h3po4'),),
+              'T': ((-1*mod_weights['h3po4'][0],('a', 'b','y'),'-h3po4'),),
+              'Y': ((-1*mod_weights['phosphorylation'][0],('a', 'b','y'),'-hpo3'),),
+              'S': ((-1*mod_weights['phosphorylation'][0],('a', 'b','y'),'-hpo3'),),
+              'T': ((-1*mod_weights['phosphorylation'][0],('a', 'b','y'),'-hpo3'),),
+              }
+
+signatureIons = {'Immonium': 216.043,
+                 }
