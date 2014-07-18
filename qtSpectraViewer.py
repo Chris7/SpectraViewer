@@ -23,6 +23,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 import pyqtgraph as pg
 import SpecView, SettingsPanel
+import numpy as np
 
 try:
     from collections import OrderedDict
@@ -329,6 +330,10 @@ def saveConfig():
     elTree = etree.ElementTree(root)
     elTree.write('spectraConf.xml', xml_declaration=True)
 
+# class SortableTreeWidgetItem(QTreeWidgetItem):
+#     def __lt__(self, other):
+#         return self < other
+
 class FileObject(object):
     def __init__(self, path):
         self.path = path
@@ -336,11 +341,11 @@ class FileObject(object):
         self.titleRegex = None
         pepSpecType = ('pep.xml', 'xml', 'msf', 'dat')
         specType = ('mgf', 'mzml')
+        self.groupBy = 1
         self.idColumn = 0
         if [i for i in pepSpecType if i in path.lower()]:
             fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
             self.colnames = OrderedDict([("Scan Title",(str,'id',1)), ("Peptide",(str,'peptide',1)), ("Modifications",(str,'getModifications',0)), ("Charge",(int,'charge',1)), ("Accession",(str, 'acc',1))])
-            self.groupBy = 1
             if fileType == 'pep.xml':
                 self.iObj = fileIterators.PepXMLIterator(path)
                 self.colnames['Expect'] = (float,'expect',1)
@@ -357,13 +362,14 @@ class FileObject(object):
                 self.idColumn = 5
                 self.colnames['Confidence Level'] = (int, 'confidence',1)
                 self.colnames['Search Engine Rank'] = (int, 'rank',1)
+                self.colnames["RT"] = (float,'rt',1)
         elif [i for i in specType if i in path.lower()]:
             fileType = [i for i in specType if i in path.lower()][0]
             if fileType == 'mzml':
-                self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("MS Level",(int,'ms_level',1)), ("Charge",(int,'charge',1)), ("RT",(str,'rt',1)), ("Precursor Mass",(str,'mass',1))])
+                self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("MS Level",(int,'ms_level',1)), ("Charge",(int,'charge',1)), ("RT",(float,'rt',1)), ("Precursor Mass",(str,'mass',1))])
                 self.iObj = fileIterators.MZMLIterator(path)
             else:
-                self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("Charge",(int,'charge',1)), ("RT",(str,'rt',1)), ("Precursor Mass",(str,'mass',1))])
+                self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("Charge",(int,'charge',1)), ("RT",(float,'rt',1)), ("Precursor Mass",(str,'mass',1))])
                 self.iObj = fileIterators.mgfIterator(path, random=True)
             self.groupBy = 0
         else:
@@ -384,6 +390,13 @@ class FileObject(object):
             peptide = treeItem.data[1]
             # print scanTitle, peptide, type(self.iObj)
             scan = self.iObj.getScan(scanTitle, peptide=peptide)
+            # convert the scans to numpy arrays
+            scan.scans = np.array(scan.scans)
+            # try:
+            #     scan.ms1_scan.scans = np.array(scan.ms1_scan.scans)
+            # except:
+            #     pass
+            self.scanMap[treeItem] = scan
             # print scan
         return scan
 
@@ -691,8 +704,8 @@ class AUCText(pg.TextItem, CustomClick):
     def mouseClickEvent(self, ev):
         super(AUCText, self).mouseClickEvent(ev)
         if ev.double():
-            self.line.deleteLater()
-            self.deleteLater()
+            self.line.hide()
+            self.hide()
 
 
 
@@ -703,6 +716,7 @@ class ChromatogramPanel(pg.PlotWidget):
         self.chromatogram = None
         self.controlDown = False
         self.startPos = False
+        self.appended = False
         self.plot = pg.PlotDataItem()
         self.vb = self.getViewBox()
         self.addItem(self.plot)
@@ -718,13 +732,23 @@ class ChromatogramPanel(pg.PlotWidget):
         event.ignore()
 
     def plotChromatogram(self, **kwargs):
-        x = kwargs.get('x', [])
-        y = kwargs.pop('y', [])
-        if x and y:
+        x = np.array(kwargs.get('x', []))
+        y = np.array(kwargs.pop('y', []))
+        append = kwargs.pop('append', False)
+        print 'append status',append
+        if x.any() and y.any():
             # self.clear()
+            # FIXME: make a failsafe against different x values
+            if append:
+                if self.appended:
+                    y = self.y+y
+                else:
+                    y = y
+                    self.appended = True
             self.plot.setData(x, y, pen=[0,0,0])
             self.x, self.y = x,y
             return
+        self.appended = False
         if self.chromatogram is None:
             return
         # self.clear()
@@ -749,6 +773,8 @@ class ChromatogramPanel(pg.PlotWidget):
         return total*(h/3.0)
 
     def onMouseClick(self, click):
+        if click.double():
+            self.plotChromatogram()
         view_click = click.pos()
         vcx, vcy = view_click.x(), view_click.y()
         clicks = []
@@ -798,7 +824,10 @@ class ChromatogramPanel(pg.PlotWidget):
                 # average delta
                 deltas = [a - x[i - 1] for i, a in enumerate(x)][1:]
                 gap = sum(deltas)/len(deltas)
-                area = self.integrate(y, gap)
+                if not gap:
+                    area = sum(y)
+                else:
+                    area = self.integrate(y, gap)
                 txt='AUC:%s'%area
                 self.annotate = AUCText(text = txt, color=[1,1,1])
                 self.annotate.line = self.chromLine
@@ -853,7 +882,7 @@ class MainWindow(QMainWindow):
         self.filemenu.addAction(openAction)
         self.filemenu.addAction(settingsAction)
         self.filemenu.addAction(exitAction)
-        self.validExtensions = set(['.xml', '.msf', '.mgf', '.dat', '.mzml'])
+        self.validExtensions = set(['.xml', '.msf', '.mgf', '.dat', '.mzml', '.gz'])
         self._form.tabWidget.setTabsClosable(True)
         self._form.tabWidget.tabCloseRequested.connect(self.onTabClose)
         loadConfig()
@@ -975,7 +1004,7 @@ class ViewerTab(QMainWindow):
         del self.objMap
 #        self.deleteLater()
 
-    def onClick(self, item, col):
+    def onClick(self, item):
         self.item = item
         self.loadScan(FILE_MAP[item.fileName].getScan(item))
 
@@ -1063,6 +1092,7 @@ class ViewerTab(QMainWindow):
         self.peptidePanel = PeptidePanel(self)
         # self.peptidePanelDock.setWidget(self.peptidePanel)
         self.chromaPanel = ChromatogramPanel(self)
+        self.baseTracePanel = ChromatogramPanel(self)
         self.draw = DrawFrame(self)
         self.ms1_draw = DrawFrame(self)
         self.searchBox = QLineEdit()
@@ -1105,10 +1135,16 @@ class ViewerTab(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.peptidePanel)
         self.tabifyDockWidget(self.peptidePanel, dock)
+        base_dock = QDockWidget("Base Trace")
+        base_dock.setWidget(self.baseTracePanel)
+        self.addDockWidget(Qt.RightDockWidgetArea, base_dock)
+        self.tabifyDockWidget(dock, base_dock)
         dock = QDockWidget("MS2")
         dock.setWidget(self.draw)
+        self.draw.dock = dock
         ms1dock = QDockWidget("MS1")
         ms1dock.setWidget(self.ms1_draw)
+        self.ms1_draw.dock = ms1dock
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.addDockWidget(Qt.RightDockWidgetArea, ms1dock)
         self.tabifyDockWidget(dock, ms1dock)
@@ -1131,13 +1167,17 @@ class ViewerTab(QMainWindow):
         self.groupBy = self.LoadThread.groupBy
         self.colnames = self.LoadThread.colnames
         self.searchCols.addItems(self.colnames.keys())
-        print self.chromaPanel.chromatogram
         if self.chromaPanel.chromatogram is None:
             for iterObj in self.LoadThread.its:
                 chroma = iterObj.getChromatogram()
                 if chroma:
                     self.chromaPanel.chromatogram = chroma
                     self.chromaPanel.plotChromatogram()
+                    break
+                bt = iterObj.getBaseTrace()
+                if bt:
+                    self.baseTracePanel.chromatogram = bt
+                    self.baseTracePanel.plotChromatogram()
                     break
         self.searchCols.setCurrentIndex(self.groupBy)
         self.objMap = self.LoadThread.objMap
@@ -1276,7 +1316,7 @@ class ViewerTab(QMainWindow):
 
     def reloadScan(self):
         try:
-            self.onClick(self.item, 0)
+            self.onClick(self.item)
         except AttributeError:
             return
 
@@ -1295,22 +1335,28 @@ class ViewerTab(QMainWindow):
                 canvas = self.ms1_draw
             canvas.cleanup()
             canvas.setTitle(scan.title)
+            canvas.dock.raise_()
             self.plotIons(a)
             if canvas.ionView['all']:
                 mz = scan.scans
                 x,y = zip(*[(float(i), float(j)) for i,j in mz if int(j)])
                 canvas.plotXY(x,y)
-            if hasattr(scan, 'ms1_scans'):
+            if hasattr(scan, 'ms1_scan'):
                 canvas = self.ms1_draw
                 canvas.cleanup()
-                mz = scan.ms1_scans
+                mz = scan.ms1_scan.scans
                 x,y = zip(*[(float(i), float(j)) for i,j in mz if int(j)])
                 canvas.plotXY(x,y, xRange=(min(x), max(x)))
         elif isinstance(scan, ScanObject):
             self.draw.cleanup()
             mz = scan.scans
             x,y = zip(*[(float(i), float(j)) for i,j in mz if int(j)])
-            self.draw.plotXY(x,y)
+            if scan.ms_level != 1:
+                canvas = self.draw
+            else:
+                canvas = self.ms1_draw
+            canvas.plotXY(x,y)
+            canvas.dock.raise_()
 
     def plotIons(self, a, canvas=None):
         if canvas is None:
@@ -1330,6 +1376,7 @@ class PlotPanel(QWidget):
         self.vbox = QVBoxLayout(self)
         self.peptidePanel = self.parent.peptidePanel
         self.chromaPanel = self.parent.chromaPanel
+        self.baseTracePanel = self.parent.baseTracePanel
         self.pw = pg.PlotWidget(background=[255,255,255,255])
         self.canvas = self.pw.getViewBox()
         # self.canvas.enableAutoRange()
@@ -1468,6 +1515,14 @@ class DrawFrame(PlotPanel):
         a.setChecked(True)
         a.setToolTip('Plot bars instead of a line plot')
 
+        #whether to connect or not connect dots
+        self.clear_quant_button = QPushButton('Clear Quant')
+        self.clear_quant_button.setToolTip('This clears the chromaogram quantification selections')
+        self.clear_quant_button.connect(self.clear_quant_button, SIGNAL("clicked()"),
+                                        self.slot_clear_quant)
+        self.toolbar.addWidget(self.clear_quant_button)
+
+
 
         self.toolbar.actionTriggered.connect(self.onAction)
         #error tolerance
@@ -1487,6 +1542,10 @@ class DrawFrame(PlotPanel):
         if txt in set(['x','y','z','a','b','c', 'all', '++', '>2', 'pairs']):
             self.ionView[txt] = action.isChecked()
             self.parent.reloadScan()
+
+    def slot_clear_quant(self):
+        self.chromaPanel.plotChromatogram()
+        self.baseTracePanel.plotChromatogram()
 
     def plotIons(self, peaks):
         for i in peaks:
@@ -1521,8 +1580,8 @@ class DrawFrame(PlotPanel):
 
     def setTitle(self, title):
         self.pw.setTitle(title)
-        self.pw.setLabel('left', 'M/Z')
-        self.pw.setLabel('bottom', 'Intensity')
+        self.pw.setLabel('left', '<font color="black">M/Z</black>')
+        self.pw.setLabel('bottom', '<font color="black">Intensity</black>')
 
     def draw(self):
         xmax = 10
@@ -1571,7 +1630,7 @@ class DrawFrame(PlotPanel):
                     else:
                         txt = '<font color="{0}">{1}{2}<sup>{3}</sup></font>'.format(tcolor, fragType,fragNum,''.join(['+' for i in xrange(charge)]))
                     ti = pg.TextItem(html=txt)
-                    self.canvas.connect
+                    # self.canvas.connect
                     self.canvas.addItem(ti)
                     plot_xy = self.pw.mapToScene(QPoint(x,y))
                     ti.setPos(plot_xy.x(), plot_xy.y())
@@ -1611,23 +1670,27 @@ class DrawFrame(PlotPanel):
                 self.startPos = False
                 # now we update our chromatagram over the range selected
                 # select just ms1 scans
+                # FIXME: Make this more generic
                 items = set(self.parent.tree.findItems('1',Qt.MatchRecursive|Qt.MatchContains,column=1))
+                if not items:
+                    items = set(self.parent.tree.findItems('*',Qt.MatchRecursive|Qt.MatchWildcard,column=1))
                 new_plot = []
                 for row in items:
                     scan = FILE_MAP[row.fileName].getScan(row)
+                    try:
+                        scans = np.array(scan.ms1_scan.scans)
+                    except AttributeError:
+                        scans = scan.scans
                     # get the relevant m/z
-                    intensity = 0
-                    for i,j in scan.scans:
-                        if x1 <= i <= x2:
-                            intensity += j
-                        elif i>x2:
-                            break
+                    # c = np.array([np.array([(i,i+5) for i in range(20)]) for j in range(50)])
+                    # c[np.where((c[:,:,0]>=5)&(c[:,:,0]<=15))].sum()
+                    intensity = scans[np.where((scans[:,0]>x1)&(scans[:,0]<=x2)),1].sum()
                     new_plot.append((float(row.data[3]),intensity))
                 # update our chromatogram
                 new_plot.sort(key=operator.itemgetter(0))
                 if new_plot:
                     rx,ry = zip(*new_plot)
-                    self.chromaPanel.plotChromatogram(x=rx, y=ry)
+                    self.chromaPanel.plotChromatogram(x=rx, y=ry,append=True)
             else:
                 try:
                     self.canvas.removeItem(self.chromLine)
