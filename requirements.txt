@@ -1,2 +1,2 @@
-pythomics>=0.1.91
+pythomics
 pyqtgraph

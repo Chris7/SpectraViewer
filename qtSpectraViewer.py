@@ -370,12 +370,15 @@ class FileObject(object):
                 self.iObj = fileIterators.MZMLIterator(path)
             else:
                 self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("Charge",(int,'charge',1)), ("RT",(float,'rt',1)), ("Precursor Mass",(str,'mass',1))])
-                self.iObj = fileIterators.mgfIterator(path, random=True)
+                self.iObj = fileIterators.MGFIterator(path, random=True)
             self.groupBy = 0
         else:
             self.colnames = ["none"]
 
     def getChromatogram(self):
+        return self.iObj.getChromatogram()
+
+    def getBaseTrace(self):
         return self.iObj.getChromatogram()
 
     def getScan(self, treeItem):
