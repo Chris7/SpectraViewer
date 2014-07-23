@@ -11,7 +11,7 @@
   <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
   <script type="text/javascript" src="javascripts/script.js"></script>
 
-  <title>Spectraviewer</title>
+  <title>Screen Shots</title>
   <meta name="description" content="A cross-platform viewer utilizing the QT SDK and pyqtgraph to visualize mass spectrometry peaklist files.  Also supported are opening of results from search engines from X!Tandem, Mascot, and Proteome Discoverer as well as raw spectra files.  The impetus for this project was a way to view mass spec data on linux since a majority of viewers were lacking.">
 
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -22,10 +22,10 @@
 
   <div class="wrapper">
     <header>
-      <h1 class="title">Spectraviewer</h1>
+      <h1 class="title">SpectraViewer</h1>
     </header>
     <div id="container">
-      <p class="tagline">A cross-platform viewer utilizing the QT SDK and pyqtgraph to visualize mass spectrometry peaklist files.  Also supported are opening of results from search engines from X!Tandem, Mascot, and Proteome Discoverer as well as raw spectra files.  The impetus for this project was a way to view mass spec data on linux since a majority of viewers were lacking.</p>
+      <p class="tagline">SpectraViewer Screen Shots</p>
       <div id="main" role="main">
         <div class="download-bar">
         <div class="inner">
@@ -38,42 +38,35 @@
         </div>
         <article class="markdown-body">
           <h1>
-<a name="spectraviewer" class="anchor" href="#spectraviewer"><span class="octicon octicon-link"></span></a>SpectraViewer</h1>
+            <a name="spectraviewer" class="anchor" href="#spectraviewer"><span class="octicon octicon-link"></span></a>SpectraViewer
+          </h1>
 
-<iframe id="ytplayer" type="text/html" width="640" height="390"
-  src="http://www.youtube.com/embed/9jrj8k5_9MA?autoplay=0"
-  frameborder="0"/>
+            <h4>Demo</h4>
 
+            <iframe id="ytplayer" type="text/html" width="640" height="390"
+              src="http://www.youtube.com/embed/9jrj8k5_9MA?autoplay=0"
+              frameborder="0"/>
 
-<p>A cross-platform viewer to open up mass spec peaklist files.</p>
+            <h4>Simple Drag and Drop Interface</h4>
 
-<p>To use, simply drag and drop a file onto the program.  Multiple tabs are provided to allow for any number of files to be open concurrently.
-Dragging multiple files into a window will open all them at once for a combined view.
-Holding Control+dropping a file will append it to the current view (this way, you can even mix &amp; match file types).</p>
+            <img src="images/main_interface.png">
 
-<p>The current goal is functionality -- elegance can come later.</p>
+            <h4>Load Multiple Datasets</h4>
 
-<p>Installation:
-You need the following installed:</p>
+            <img src="images/multiple_tabs.png">
 
-<p>PyQt4 -- <a href="http://pyqt.sourceforge.net/Docs/PyQt4/">http://pyqt.sourceforge.net/Docs/PyQt4/</a></p>
+            <h4>Multiple Embedded Panels for Each Spectra</h4>
 
-<p>pyqtgraph -- <a href="http://www.pyqtgraph.org/">http://www.pyqtgraph.org/</a></p>
+            <img src="images/peptide_shown.png">
 
-<p>The rest can be done with:
-pip install -r requirements.txt</p>
+            <h4>That can be dragged, dropped, and reorganized</h4>
 
-<p>Supported:
-mgf files - on first load the mgf file will be indexed for random access.  This is a one
-    time cost, but it is worth it.</p>
+            <img src="images/peptide_reorganize.png">
 
-<p>X!Tandem xml files</p>
+            <h4>Manual Selection of TIC</h4>
 
-<p>Proteome Discovered .msf files - These load very fast, anyone used to PD's abysmal (and unthreaded) speed will appreciate this</p>
+            <img src="images/manual_integration.png">
 
-<p>MZML/PepXML</p>
-
-<p>Mascot DAT Files</p>
         </article>
       </div>
     </div>
