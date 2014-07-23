@@ -680,6 +680,33 @@ a.download-button span {
   color: #fff;
 }
 
+a.nav-button {
+  border: 1px solid black;
+  border-radius: 3px;
+  display: inline-block;
+  text-indent: 0!important;
+  width: auto;
+  float: right;
+  background: #999; /* for non-css3 browsers */
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#37ADD4', endColorstr='#1B657E'); /* IE <= 9 */
+  background: -webkit-gradient(linear, left top, left bottom, from(#37ADD4), to(#1B657E)); /* ancient webkit browsers */
+  background: -webkit-linear-gradient(top,  #37ADD4,  #1B657E);  /* Safari <=6.1, Android <= 4.3 */
+  background: linear-gradient(to bottom,  #37ADD4,  #1B657E);
+  height: auto;
+  margin-left: 10px;
+}
+
+a.nav-button span {
+  background-position: 10px 5px;
+  width: auto;
+  height: auto;
+  padding: 5px 10px;
+  padding-left: 10px;
+  display: inline-block;
+  text-indent: 0!important;
+  color: #fff;
+}
+
 footer {
   margin-bottom: 60px;
   padding-bottom: 60px;
