@@ -1016,8 +1016,8 @@ class ViewerTab(QMainWindow):
         menu = QMenu()
         menu.addAction("Group By Column")
         ty = self.tree.pos().y()
-        gpos.setY(gpos.y()+ty)
-        selected = menu.exec_(self.mapToParent(gpos))
+        gpos.setY(gpos.y()+ty+self.tree.parent().pos().y())
+        selected = menu.exec_(gpos)#self.mapToParent(gpos))
         if selected:
             self.Group(self.tree.header().logicalIndexAt(pos))
 
