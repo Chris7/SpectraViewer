@@ -418,11 +418,10 @@ class LoaderThread(QThread):
     def run(self):
         self.its = []
         for fileindex,path in enumerate(self.files):
-            if path in FILE_MAP:
-                continue
             iterObj = FileObject(path)
+            if path not in FILE_MAP:
+                FILE_MAP[path] = iterObj
             self.its.append(iterObj)
-            FILE_MAP[path] = iterObj
             self.colnames = iterObj.colnames
             if not self.colnames:
                 self.emit(SIGNAL('fileDone'),fileindex,len(self.files))
