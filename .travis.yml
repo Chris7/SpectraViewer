@@ -8,7 +8,7 @@ install:
   - sudo pip install -r requirements.txt
   - sudo pip install coveralls
 script:
-  python qtSpectraViewer.py
+  python qtSpectraViewer.py test
 language:
   - python
 python:

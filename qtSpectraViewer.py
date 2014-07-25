@@ -1476,5 +1476,17 @@ class DrawFrame(PlotPanel):
 
 app = QApplication(sys.argv)
 w = MainWindow()
-#w.addPage(['sampleMgf.mgf'])
-app.exec_()
+if len(sys.argv) > 1 and sys.argv[1] == 'test':
+    import os
+    sample_dir = 'samples'
+    files = [os.path.join(sample_dir, filename) for filename in os.listdir(sample_dir)]
+    w.addPage(files)
+    for i in files:
+        w.addPage([i])
+    import time
+    while len(FILE_MAP) != len(files):
+        # wait until they all load
+        time.sleep(1)
+    app.exit()
+else:
+    app.exec_()
