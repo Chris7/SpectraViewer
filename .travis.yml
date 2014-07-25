@@ -1,11 +1,17 @@
 before_install:
   - sudo apt-get update
+  - sudo apt-get install -qq python-numpy python-scipy
 install:
   - sudo apt-get install libqt4-dev python-qt4-dev
   - sudo pip install -r requirements.txt
+  - sudo pip install coveralls
 script:
-  - python qtSpectraViewer.py
+  python qtSpectraViewer.py
 language:
   - python
 python:
   - "2.7"
+virtualenv:
+  system_site_packages: true
+after_success:
+  coveralls
