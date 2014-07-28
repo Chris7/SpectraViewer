@@ -1236,6 +1236,7 @@ class DrawFrame(PlotPanel):
         icon = QIcon(qpixmap)
         a = self.toolbar.addAction(icon, 'all')
         a.setCheckable(True)
+        a.setChecked(True)
         a.setToolTip('Show All Spectra')
 
         #whether to connect or not connect dots
