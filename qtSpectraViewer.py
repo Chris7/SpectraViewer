@@ -455,6 +455,10 @@ class ChromatogramPanel(pg.PlotWidget):
         self.startPos = False
         self.appended = False
         self.plot = pg.PlotDataItem()
+        x = self.getAxis('bottom')
+        x.setPen('k')
+        y = self.getAxis('left')
+        y.setPen('k')
         self.vb = self.getViewBox()
         self.addItem(self.plot)
         self.sceneObj.sigMouseMoved.connect(self.onMouseMove)
@@ -1115,6 +1119,10 @@ class PlotPanel(QWidget):
         self.chromaPanel = self.parent.chromaPanel
         self.baseTracePanel = self.parent.baseTracePanel
         self.pw = pg.PlotWidget(background=[255,255,255,255])
+        x = self.pw.getAxis('bottom')
+        x.setPen('k')
+        y = self.pw.getAxis('left')
+        y.setPen('k')
         self.canvas = self.pw.getViewBox()
         # self.canvas.enableAutoRange()
         # self.canvas.mouseEnabled = True
@@ -1317,9 +1325,9 @@ class DrawFrame(PlotPanel):
         self.hitMapXF = {}
 
     def setTitle(self, title):
-        self.pw.setTitle(title)
-        self.pw.setLabel('left', '<font color="black">M/Z</black>')
-        self.pw.setLabel('bottom', '<font color="black">Intensity</black>')
+        self.pw.setTitle(title, color='k')
+        self.pw.setLabel('left', '<font color="black">M/Z</font>')
+        self.pw.setLabel('bottom', '<font color="black">Intensity</font>')
 
     def draw(self):
         xmax = 10
