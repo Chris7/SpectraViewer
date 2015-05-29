@@ -65,9 +65,18 @@ def saveConfig():
     elTree = etree.ElementTree(root)
     elTree.write('spectraConf.xml', xml_declaration=True)
 
-# class SortableTreeWidgetItem(QTreeWidgetItem):
-#     def __lt__(self, other):
-#         return self < other
+SORT_FUNCS = {
+    str: lambda x,y: float(x)<float(y) if x.toInt()[1] and y.toInt()[1] else x<y,
+    float: lambda x,y: float(x) < float(y),
+    int: lambda x,y: int(x) < int(y),
+}
+
+class SortableTreeWidgetItem(QTreeWidgetItem):
+    def __lt__(self, other):
+        tree = self.treeWidget()
+        column = tree.sortColumn()
+        # TODO: check abnout making this a closure
+        return SORT_FUNCS[tree.sort_funcs[column]](self.text(column).toLower(), other.text(column).toLower())
 
 class FileObject(object):
     def __init__(self, path):
@@ -127,7 +136,10 @@ class FileObject(object):
                     scanTitle = title.group(1)
             peptide = treeItem.data[1]
             # print scanTitle, peptide, type(self.iObj)
-            scan = self.iObj.getScan(scanTitle, peptide=peptide)
+            try:
+                scan = list(self.iObj.getScan(scanTitle, peptide=peptide))[0]
+            except TypeError:
+                scan = self.iObj.getScan(scanTitle, peptide=peptide)
             # convert the scans to numpy arrays
             scan.scans = np.array(scan.scans)
             # try:
@@ -178,7 +190,7 @@ class LoaderThread(QThread):
                 nid = toAdd[self.groupBy]#group on peptide by default
                 node = self.objMap.get(nid)
                 if node is None:
-                    newNode = QTreeWidgetItem()
+                    newNode = SortableTreeWidgetItem()
                     [newNode.setText(k,str(v)) for k,v in enumerate(toAdd)]
                     newNode.fileName = path
                     newNode.data = toAdd
@@ -186,7 +198,7 @@ class LoaderThread(QThread):
                     self.data[newNode] = newNode
                     self.objMap[nid] = newNode
                 else:
-                    newNode = QTreeWidgetItem(node)
+                    newNode = SortableTreeWidgetItem(node)
                     [newNode.setText(k,str(v)) for k,v in enumerate(toAdd)]
                     newNode.fileName = path
                     newNode.data = toAdd
@@ -907,6 +919,7 @@ class ViewerTab(QMainWindow):
         self.tree.itemDoubleClicked.connect(self.onClick)
         self.groupBy = self.LoadThread.groupBy
         self.colnames = self.LoadThread.colnames
+        self.tree.sort_funcs = [v[0] for i,v in self.colnames.iteritems()]
         self.searchCols.addItems(self.colnames.keys())
         if self.chromaPanel.chromatogram is None:
             for iterObj in self.LoadThread.its:
@@ -1201,6 +1214,7 @@ class DrawFrame(PlotPanel):
         self.startPos = False
         self.endPos = False
         self.controlDown = False
+        self.reset_ranges = True
         self.lastClick = time.time()
 
         self.annotate = None
@@ -1261,6 +1275,14 @@ class DrawFrame(PlotPanel):
         a.setChecked(True)
         a.setToolTip('Plot bars instead of a line plot')
 
+        self.pin = QPushButton('Reset Ranges')
+        self.pin.setCheckable(True)
+        self.pin.setChecked(True)
+        self.pin.setToolTip('This will reset the plot after each scan')
+        self.pin.connect(self.pin, SIGNAL("clicked()"),
+                                        self.slot_pin)
+        self.toolbar.addWidget(self.pin)
+
         #whether to connect or not connect dots
         self.clear_quant_button = QPushButton('Clear Quant')
         self.clear_quant_button.setToolTip('This clears the chromaogram quantification selections')
@@ -1292,6 +1314,9 @@ class DrawFrame(PlotPanel):
     def slot_clear_quant(self):
         self.chromaPanel.plotChromatogram()
         self.baseTracePanel.plotChromatogram()
+
+    def slot_pin(self):
+        self.reset_ranges = not self.reset_ranges
 
     def plotIons(self, peaks):
         for i in peaks:
@@ -1389,7 +1414,8 @@ class DrawFrame(PlotPanel):
             plot.setZValue(_z)
             self.canvas.addItem(plot)
         # x, y, colors = zip(*bars)
-        self.canvas.getViewBox().setRange(xRange=(0, xmax), yRange=(0, ymax))
+        if self.reset_ranges:
+            self.canvas.getViewBox().setRange(xRange=(0, xmax), yRange=(0, ymax))
         self.pw.addLine(y=0, pen=[0,0,0])
 
     def mousePressEvent(self, event):
