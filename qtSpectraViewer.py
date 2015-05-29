@@ -846,7 +846,7 @@ class ViewerTab(QMainWindow):
         # self.peptidePanelDock.setWidget(self.peptidePanel)
         self.chromaPanel = ChromatogramPanel(self)
         self.baseTracePanel = ChromatogramPanel(self)
-        self.draw = DrawFrame(self)
+        self.ms2_draw = DrawFrame(self)
         self.ms1_draw = DrawFrame(self)
         self.searchBox = QLineEdit()
         self.searchBox.editingFinished.connect(self.onSearch)
@@ -893,8 +893,8 @@ class ViewerTab(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, base_dock)
         self.tabifyDockWidget(dock, base_dock)
         dock = QDockWidget("MS2")
-        dock.setWidget(self.draw)
-        self.draw.dock = dock
+        dock.setWidget(self.ms2_draw)
+        self.ms2_draw.dock = dock
         ms1dock = QDockWidget("MS1")
         ms1dock.setWidget(self.ms1_draw)
         self.ms1_draw.dock = ms1dock
@@ -1066,7 +1066,7 @@ class ViewerTab(QMainWindow):
         self.tree.setSortingEnabled(True)
 
     def getTolerance(self):
-        return float(self.draw.etolerance.text())
+        return float(self.ms2_draw.etolerance.text())
 
     def reloadScan(self):
         try:
@@ -1084,7 +1084,7 @@ class ViewerTab(QMainWindow):
         if isinstance(scan, PeptideObject):
             a = figureIons.figureIons(scan, self.getTolerance())
             if scan.ms_level != 1:
-                canvas = self.draw
+                canvas = self.ms2_draw
             else:
                 canvas = self.ms1_draw
             canvas.cleanup()
@@ -1102,19 +1102,19 @@ class ViewerTab(QMainWindow):
                 x,y = zip(*[(float(i), float(j)) for i,j in mz if int(j)])
                 canvas.plotXY(x,y, xRange=(min(x), max(x)))
         elif isinstance(scan, ScanObject):
-            self.draw.cleanup()
             mz = scan.scans
             x,y = zip(*[(float(i), float(j)) for i,j in mz if int(j)])
             if scan.ms_level != 1:
-                canvas = self.draw
+                canvas = self.ms2_draw
             else:
                 canvas = self.ms1_draw
+            canvas.cleanup()
             canvas.plotXY(x,y)
             canvas.dock.raise_()
 
     def plotIons(self, a, canvas=None):
         if canvas is None:
-            canvas = self.draw
+            canvas = self.ms2_draw
         ionList = a.assignPeaks()
         self.pepSequence = a.scan.peptide
         canvas.plotIons(ionList)
