@@ -1,7 +1,7 @@
 SpectraViewer
 =============
 
-[![Build Status](https://travis-ci.org/chrismit/SpectraViewer.svg?branch=master)](https://travis-ci.org/chrismit/SpectraViewer)
+[![Build Status](https://travis-ci.org/Chris7/SpectraViewer.svg?branch=master)](https://travis-ci.org/Chris7/SpectraViewer)
 
 A cross-platform viewer to open up mass spec peaklist files.
 
