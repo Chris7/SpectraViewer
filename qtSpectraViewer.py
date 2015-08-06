@@ -757,7 +757,7 @@ class ViewerTab(QMainWindow):
         del self.objMap
 #        self.deleteLater()
 
-    def onClick(self, item):
+    def onClick(self, item, *args):
         self.item = item
         self.loadScan(FILE_MAP[item.fileName].getScan(item))
 
@@ -917,6 +917,7 @@ class ViewerTab(QMainWindow):
         self.tree.header().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.header().customContextMenuRequested.connect(self.onHeaderRC)
         self.tree.itemDoubleClicked.connect(self.onClick)
+        self.tree.currentItemChanged.connect(self.onClick)
         self.groupBy = self.LoadThread.groupBy
         self.colnames = self.LoadThread.colnames
         self.tree.sort_funcs = [v[0] for i,v in self.colnames.iteritems()]
@@ -1215,6 +1216,7 @@ class DrawFrame(PlotPanel):
         self.endPos = False
         self.controlDown = False
         self.reset_ranges = True
+        self.auto_load = True
         self.lastClick = time.time()
 
         self.annotate = None
