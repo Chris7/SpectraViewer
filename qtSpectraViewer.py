@@ -1448,6 +1448,7 @@ class DrawFrame(PlotPanel):
                 items = set(self.parent.tree.findItems('1',Qt.MatchRecursive|Qt.MatchContains,column=1))
                 if not items:
                     items = set(self.parent.tree.findItems('*',Qt.MatchRecursive|Qt.MatchWildcard,column=1))
+
                 new_plot = []
                 for row in items:
                     scan = FILE_MAP[row.fileName].getScan(row)
