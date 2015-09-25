@@ -88,6 +88,7 @@ class FileObject(object):
         self.groupBy = 1
         self.idColumn = 0
         if [i for i in pepSpecType if i in path.lower()]:
+            # 0 means it's a callable, 1 means its an attribute
             fileType = [i for i in pepSpecType if i in path][0]#this changes based on the file input somewhat
             self.colnames = OrderedDict([("Scan Title",(str,'id',1)), ("Peptide",(str,'peptide',1)), ("Modifications",(str,'getModifications',0)), ("Charge",(int,'charge',1)), ("Accession",(str, 'acc',1))])
             if fileType == 'pep.xml':
@@ -110,10 +111,10 @@ class FileObject(object):
         elif [i for i in specType if i in path.lower()]:
             fileType = [i for i in specType if i in path.lower()][0]
             if fileType == 'mzml':
-                self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("MS Level",(int,'ms_level',1)), ("Charge",(int,'charge',1)), ("RT",(float,'rt',1)), ("Precursor Mass",(str,'mass',1))])
+                self.colnames = OrderedDict([("Scan Title",(str,'id',1)), ("MS Level",(int,'ms_level',1)), ("Charge",(int,'charge',1)), ("RT",(float,'rt',1)), ("Precursor Mass",(str,'mass',1))])
                 self.iObj = fileIterators.MZMLIterator(path)
             else:
-                self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("Charge",(int,'charge',1)), ("RT",(float,'rt',1)), ("Precursor Mass",(str,'mass',1))])
+                self.colnames = OrderedDict([("Scan Title",(str,'id',1)), ("Charge",(int,'charge',1)), ("RT",(float,'rt',1)), ("Precursor Mass",(str,'mass',1))])
                 self.iObj = fileIterators.MGFIterator(path, random=True)
             self.groupBy = 0
         else:
