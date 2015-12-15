@@ -137,10 +137,7 @@ class FileObject(object):
                     scanTitle = title.group(1)
             peptide = treeItem.data[1]
             # print scanTitle, peptide, type(self.iObj)
-            try:
-                scan = list(self.iObj.getScan(scanTitle, peptide=peptide))[0]
-            except TypeError:
-                scan = self.iObj.getScan(scanTitle, peptide=peptide)
+            scan = self.iObj.getScan(scanTitle, peptide=peptide)
             # convert the scans to numpy arrays
             scan.scans = np.array(scan.scans)
             # try:
