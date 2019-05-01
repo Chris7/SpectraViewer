@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Author: Chris Mitchell (chris.mit7@gmail.com)
 Copyright (C) 2012 Chris Mitchell
@@ -25,6 +26,11 @@ from PyQt4.QtGui import *
 import pyqtgraph as pg
 import SpecView, SettingsPanel
 import numpy as np
+import six
+try:
+    range = xrange
+except NameError:
+    range = range
 
 #some globals for us
 fileNames = {}
@@ -65,8 +71,14 @@ def saveConfig():
     elTree = etree.ElementTree(root)
     elTree.write('spectraConf.xml', xml_declaration=True)
 
+def toFloat(v):
+    try:
+        return float(y)
+    except Exception:
+        return False
+
 SORT_FUNCS = {
-    str: lambda x,y: float(x)<float(y) if x.toInt()[1] and y.toInt()[1] else x<y,
+    str: lambda x,y: float(x)<float(y) if toFloat(x) and toFloat(y) else x<y,
     float: lambda x,y: float(x) < float(y),
     int: lambda x,y: int(x) < int(y),
 }
@@ -75,8 +87,7 @@ class SortableTreeWidgetItem(QTreeWidgetItem):
     def __lt__(self, other):
         tree = self.treeWidget()
         column = tree.sortColumn()
-        # TODO: check abnout making this a closure
-        return SORT_FUNCS[tree.sort_funcs[column]](self.text(column).toLower(), other.text(column).toLower())
+        return SORT_FUNCS[tree.sort_funcs[column]](self.text(column).lower(), other.text(column).lower())
 
 class FileObject(object):
     def __init__(self, path):
@@ -87,10 +98,10 @@ class FileObject(object):
         specType = ('mgf', 'mzml')
         self.groupBy = 1
         self.idColumn = 0
-        if [i for i in pepSpecType if path.lower().endswith(i)]:
-            # 0 means it's a callable, 1 means its an attribute
-            fileType = [i for i in pepSpecType if path.endswith(i)][0]#this changes based on the file input somewhat
-            self.colnames = OrderedDict([("Scan Title",(str,'title',1)), ("Peptide",(str,'peptide',1)), ("Modifications",(str,'getModifications',0)), ("Charge",(int,'charge',1)), ("Accession",(str, 'acc',1))])
+        fileTypes = [i for i in pepSpecType if   path.lower().endswith(i)]
+        if any(fileTypes):
+            fileType = fileTypes[0]#this changes based on the file input somewhat
+            self.colnames = OrderedDict([("Scan Title",(str,'id',1)), ("Peptide",(str,'peptide',1)), ("Modifications",(str,'getModifications',0)), ("Charge",(int,'charge',1)), ("Accession",(str, 'acc',1))])
             if fileType == 'pep.xml':
                 self.iObj = fileIterators.PepXMLIterator(path)
                 self.colnames['Expect'] = (float,'expect',1)
@@ -128,8 +139,8 @@ class FileObject(object):
 
     def getScan(self, treeItem):
         try:
-            scan = self.scanMap[treeItem]
-        except:
+            scan = self.scanMap[id(treeItem)]
+        except Exception:
             scanTitle = treeItem.data[self.idColumn]
             if self.titleRegex:
                 title = self.titleRegex.search(scanTitle)
@@ -144,7 +155,7 @@ class FileObject(object):
             #     scan.ms1_scan.scans = np.array(scan.ms1_scan.scans)
             # except:
             #     pass
-            self.scanMap[treeItem] = scan
+            self.scanMap[id(treeItem)] = scan
             # print scan
         return scan
 
@@ -193,14 +204,14 @@ class LoaderThread(QThread):
                     newNode.fileName = path
                     newNode.data = toAdd
                     newNode.subnodes = []
-                    self.data[newNode] = newNode
+                    self.data[id(newNode)] = newNode
                     self.objMap[nid] = newNode
                 else:
                     newNode = SortableTreeWidgetItem(node)
                     [newNode.setText(k,str(v)) for k,v in enumerate(toAdd)]
                     newNode.fileName = path
                     newNode.data = toAdd
-                    self.data[node].subnodes.append(newNode)
+                    self.data[id(node)].subnodes.append(newNode)
             self.emit(SIGNAL('fileDone'),fileindex,len(self.files))
 
 class PeptidePanel(QDockWidget):
@@ -438,7 +449,7 @@ class AUCText(pg.TextItem, CustomClick):
         self.contextMenu[0].triggered.connect(self.copyText)
 
     def copyText(self):
-        print 'do it'
+        print('do it')
 
     def hoverEnterEvent(self, ev):
         self.setText(text=self.text, color='r')
@@ -486,7 +497,7 @@ class ChromatogramPanel(pg.PlotWidget):
         x = np.array(kwargs.get('x', []))
         y = np.array(kwargs.pop('y', []))
         append = kwargs.pop('append', False)
-        print 'append status',append
+        print('append status',append)
         if x.any() and y.any():
             # self.clear()
             # FIXME: make a failsafe against different x values
@@ -918,8 +929,8 @@ class ViewerTab(QMainWindow):
         self.tree.currentItemChanged.connect(self.onClick)
         self.groupBy = self.LoadThread.groupBy
         self.colnames = self.LoadThread.colnames
-        self.tree.sort_funcs = [v[0] for i,v in self.colnames.iteritems()]
-        self.searchCols.addItems(self.colnames.keys())
+        self.tree.sort_funcs = [v[0] for i,v in six.iteritems(self.colnames)]
+        self.searchCols.addItems(list(self.colnames.keys()))
         if self.chromaPanel.chromatogram is None:
             for iterObj in self.LoadThread.its:
                 chroma = iterObj.getChromatogram()
@@ -936,16 +947,16 @@ class ViewerTab(QMainWindow):
         self.objMap = self.LoadThread.objMap
         self.data = self.LoadThread.data
         self.tree.setColumnCount(len(self.colnames))
-        self.tree.setHeaderLabels(self.colnames.keys())
+        self.tree.setHeaderLabels(list(self.colnames.keys()))
         if self.data:
-            self.tree.addTopLevelItems(self.data.keys())
-            for i in self.data:
-                i.addChildren(self.data[i].subnodes)
+            self.tree.addTopLevelItems(list(self.data.values()))
+            for node in self.data.values():
+                node.addChildren(node.subnodes)
         self.tree.setSortingEnabled(True)
 
     def recurseTree(self, itemList, item):
-        itemList.add(item)
-        for i in xrange(item.childCount()):
+        itemList[id(item)] = item
+        for i in range(item.childCount()):
             self.recurseTree(itemList, item.child(i))
 
     def onFilter(self):
@@ -956,23 +967,22 @@ class ViewerTab(QMainWindow):
         if not filterTerm:
             return
         col = self.searchCols.currentIndex()
-        items = set(self.tree.findItems(filterTerm,Qt.MatchRecursive|Qt.MatchContains,column=col))
-        allItems = set([])
-        for i in xrange(self.tree.topLevelItemCount()):
+        items = {id(i): i for i in self.tree.findItems(filterTerm,Qt.MatchRecursive|Qt.MatchContains,column=col)}
+        allItems = {}
+        for i in range(self.tree.topLevelItemCount()):
             self.recurseTree(allItems, self.tree.topLevelItem(i))
         #we have all items, and we want to remove those matching our filter -- the resulting list is who to hide
-        allItems = allItems-items
-        if not allItems:
+        toHide = set(allItems.keys())-set(items.keys())
+        if (filterTerm,col) in self.filterList:
             return
-        if self.filterList.has_key((filterTerm,col)):
-            return
-        self.filterList[(filterTerm,col)] = allItems
-        for i in self.data:
-            i.subnodes.insert(0,i)
-            for subnode in i.subnodes:
-                if not subnode.isHidden() and subnode in allItems:
-                    subnode.setHidden(True)
-            i.subnodes.pop(0)
+        self.filterList[(filterTerm,col)] = {i: allItems[i] for i in toHide}
+        if toHide:
+            for i, v in six.iteritems(self.data):
+                v.subnodes.insert(0, v)
+                for subnode in v.subnodes:
+                    if not subnode.isHidden() and id(subnode) in toHide:
+                        subnode.setHidden(True)
+                v.subnodes.pop(0)
         newFilter = QPushButton()
         newFilter.setText('%s on %s'%(filterTerm, self.searchCols.itemText(col)))
         newFilter.setIcon(QIcon(self.cicon))
@@ -986,24 +996,25 @@ class ViewerTab(QMainWindow):
 
     def onFilterClick(self, fbut,fterm,fcol):
         fbut.deleteLater()
-        index = self.filterList.keys().index((fterm,fcol))
-        forder = []
-        for i,v in enumerate(self.filterList.values()):
-            if i!=index:
-                forder.append(v)
-        #unlist forder
-        forder = set([i for sublist in forder for i in sublist])
+        filterKey = (fterm,fcol)
+        # items filtered out by the current selection
+        toReveal = set(self.filterList[filterKey].keys())
+
+        # Ensure another filter is not hiding the item
+        for key, filteredItems in six.iteritems(self.filterList):
+            if key == filterKey:
+                continue
+            toReveal -= set(filteredItems.keys())
         #forder is now a list of items who are still hidden
-        for i in self.data:
-            i.subnodes.insert(0,i)
-            for subnode in i.subnodes:
+        for node in self.data.values():
+            node.subnodes.insert(0,node)
+            for subnode in node.subnodes:
                 if subnode.isHidden():#it's an item that has been filtered out from a prior step
-                    if forder:
-                        if subnode not in forder:#forder are the items we are not keeping hidden
-                            subnode.setHidden(False)
+                    if id(subnode) in toReveal:
+                        subnode.setHidden(False)
                     else:
                         subnode.setHidden(False)
-            i.subnodes.pop(0)
+            node.subnodes.pop(0)
         del self.filterList[(fterm,fcol)]
 
     def onSearch(self):
@@ -1047,19 +1058,19 @@ class ViewerTab(QMainWindow):
                 node = objMap.get(nid)
                 newNode.data = toAdd
                 if node is None:
-                    newData[newNode] = newNode
+                    newData[id(newNode)] = newNode
                     objMap[nid] = newNode
                 else:
-                    newData[node].subnodes.append(newNode)
+                    newData[id(node)].subnodes.append(newNode)
             i.subnodes.pop(0)
         self.data.clear()
         self.objMap.clear()
         self.data = newData
         self.objMap = objMap
         self.tree.clear()
-        self.tree.addTopLevelItems(self.data.keys())
-        for i in self.data:
-            sn = self.data[i].subnodes
+        self.tree.addTopLevelItems(list(self.data.keys()))
+        for i in self.data.values():
+            sn = i.subnodes
             if sn:
                 i.addChildren(sn)
         self.tree.setSortingEnabled(True)
@@ -1099,7 +1110,7 @@ class ViewerTab(QMainWindow):
                 canvas.cleanup()
                 mz = scan.ms1_scan.scans
                 x,y = zip(*[(float(i), float(j)) for i,j in mz if int(j)])
-                canvas.plotXY(x,y, xRange=(min(x), max(x)))
+                canvas.plotXY(x,y, Range=(min(x), max(x)))
         elif isinstance(scan, ScanObject):
             mz = scan.scans
             x,y = zip(*[(float(i), float(j)) for i,j in mz if int(j)])
@@ -1197,9 +1208,9 @@ class SpectraPlot(pg.PlotDataItem):
         pg.GraphicsScene.registerObject(self)
 
     def hoverEnterEvent(self, ev):
-        print 'enter'
+        print('enter')
     def hoverLeaveEvent(self, ev):
-        print 'leave'
+        print('leave')
 
 
 class DrawFrame(PlotPanel):
@@ -1228,7 +1239,7 @@ class DrawFrame(PlotPanel):
         self.toolbar.addWidget(self.lossButton)
         idmap = {}
         icon_height = 35
-        for ion,desc,index in zip(('x','y','z','a','b','c', '++', '>2', 'sig'),('X ions', 'Y Ions', 'Z Ions', 'A Ions', 'B Ions', 'C Ions', 'Doubly Charged Ions', 'All Charges', 'Signature ions'),xrange(9)):
+        for ion,desc,index in zip(('x','y','z','a','b','c', '++', '>2', 'sig'),('X ions', 'Y Ions', 'Z Ions', 'A Ions', 'B Ions', 'C Ions', 'Doubly Charged Ions', 'All Charges', 'Signature ions'),range(9)):
             qpixmap = QPixmap(35, icon_height)
             qpixmap.fill(QColor(255,255,255))
             qp = QPainter()
@@ -1397,9 +1408,9 @@ class DrawFrame(PlotPanel):
                         continue
                     hlen=len(self.hitMapX[x])*5
                     if loss:
-                        txt = '<font color="{0}">{1}{2}<sup>{3}<sup>{4}</sup></sup></font>'.format(tcolor, fragType,fragNum,loss,''.join(['+' for i in xrange(charge)]))
+                        txt = '<font color="{0}">{1}{2}<sup>{3}<sup>{4}</sup></sup></font>'.format(tcolor, fragType,fragNum,loss,''.join(['+' for i in range(charge)]))
                     else:
-                        txt = '<font color="{0}">{1}{2}<sup>{3}</sup></font>'.format(tcolor, fragType,fragNum,''.join(['+' for i in xrange(charge)]))
+                        txt = '<font color="{0}">{1}{2}<sup>{3}</sup></font>'.format(tcolor, fragType,fragNum,''.join(['+' for i in range(charge)]))
                     ti = pg.TextItem(html=txt)
                     # self.canvas.connect
                     self.canvas.addItem(ti)

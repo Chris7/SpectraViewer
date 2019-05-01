@@ -16,6 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 import re, masses, operator, copy
+try:
+    range = xrange
+except NameError:
+    range = range
 
 class figureIons(object):
     def __init__(self,scan, tolerance, skipLoss=None):
@@ -71,7 +75,7 @@ class figureIons(object):
                 pass
             if charge>maxcharge:
                 charge=maxcharge
-            for icharge in xrange(1,charge+1):
+            for icharge in range(1,charge+1):
                 for lossType in losses:
                     lossMass = lossType[0]
                     tcharge = icharge
@@ -126,7 +130,7 @@ class figureIons(object):
                         losses.add(k)
             except IndexError:
                 pass
-            for icharge in xrange(1,charge+1):
+            for icharge in range(1,charge+1):
                 for lossType in losses:
                     lossMass = lossType[0]
                     tcharge=icharge
@@ -160,7 +164,7 @@ class figureIons(object):
                         tad = (z,'z',ionIndex,tcharge,lossType[2],v)
                         if tad not in self.peakTable:
                             self.peakTable.add(tad)
-        for signature, signature_mass in masses.signatureIons.iteritems():
+        for signature, signature_mass in six.iteritems(masses.signatureIons):
             self.peakTable.add((signature_mass, 'signature', 0, 1, signature, ''))
         self.peakTable = list(self.peakTable)
         self.peakTable.sort(key=operator.itemgetter(0))
